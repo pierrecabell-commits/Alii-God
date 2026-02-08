@@ -1,0 +1,18 @@
+{
+  "name": "shell_execution",
+  "version": "1.0",
+  "timestamp": "2026-02-06T22:36:05.509002",
+  "data": {
+    "description": "Direct shell command execution capability",
+    "capabilities": [
+      "shell_execution",
+      "command_output",
+      "error_handling"
+    ],
+    "methods": [
+      "execute_shell(command)"
+    ],
+    "status": "active"
+  },
+  "checksum": "fb3d3d38ea1d578b1795913615556aafce0aa72cbc0351a55f5f2b51f4a60d06"
+}

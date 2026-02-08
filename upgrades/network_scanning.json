@@ -1,0 +1,18 @@
+{
+  "name": "network_scanning",
+  "version": "1.0",
+  "timestamp": "2026-02-06T22:36:05.508474",
+  "data": {
+    "description": "Network scanning and port detection capability",
+    "capabilities": [
+      "network_scan",
+      "port_detection",
+      "service_identification"
+    ],
+    "methods": [
+      "network_scan()"
+    ],
+    "status": "active"
+  },
+  "checksum": "cd1de6e7a89a44f76ba708b6946aa3abd0384289ec5762ef2e333eeefaf85f25"
+}

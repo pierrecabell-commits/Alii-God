@@ -1,0 +1,15 @@
+Task: Add upgrade inspection methods to moltbot_master_unified.py
+
+Add these 5 methods to the EnhancedMoltbot class before the "if __name__" section:
+
+1. display_loaded_upgrades(self) - Display all loaded upgrades with their descriptions, capabilities, methods, status, and timestamps in a detailed formatted view
+
+2. inspect_upgrade(self, upgrade_name) - Takes an upgrade name and prints its full JSON details using json.dumps with indent=2
+
+3. list_upgrade_names(self) - Returns a list of all upgrade names from self.upgrades_loaded
+
+4. get_upgrade_count(self) - Returns the count of loaded upgrades
+
+5. get_upgrade_by_capability(self, capability) - Takes a capability string and returns list of upgrade names that have that capability
+
+Make sure proper indentation is used (4 spaces per level) and all methods are part of the EnhancedMoltbot class.
