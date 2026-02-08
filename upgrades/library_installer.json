@@ -1,0 +1,17 @@
+{
+  "name": "library_installer",
+  "version": "1.0",
+  "timestamp": "2026-02-06T22:36:05.509157",
+  "data": {
+    "description": "Python library installation via pip",
+    "capabilities": [
+      "pip_install",
+      "dependency_management"
+    ],
+    "methods": [
+      "install_library(library_name)"
+    ],
+    "status": "active"
+  },
+  "checksum": "9e8fc2f19c25da85df332e4486a90628e21b8a306994270b27c315268acd9fed"
+}

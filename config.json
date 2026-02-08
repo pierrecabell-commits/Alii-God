@@ -1,0 +1,7 @@
+{
+  "perplexity": {
+    "api_key": "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",
+    "base_url": "https://api.perplexity.ai",
+    "model": "sonar-pro"
+  }
+}
