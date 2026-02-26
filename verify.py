@@ -1,0 +1,2 @@
+import ray, subprocess, socket, os@ray.remotedef check():  r={host:socket.gethostname()}  try:    import sqlite3;r[sql]=sqlite3.sqlite_version  except:r[sql]=NO  r[df]=subprocess.check_output([df,-h]).decode().split(
+)[:5]  r[w]={p:os.access(p,os.W_OK) for p in [/home/avalii,/tmp]}  return rfor i,x in enumerate(ray.get([check.remote() for _ in range(3)]),1):  print(Node,i,:,x[host],SQL:,x[sql],Write:,x[w])
