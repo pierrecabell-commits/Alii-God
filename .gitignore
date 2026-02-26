@@ -1,0 +1,9 @@
+*.log
+*.pid
+*.bak
+*.backup
+*.corrupt.*
+__pycache__/
+*.pyc
+config.json
+.env
