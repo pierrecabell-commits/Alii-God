@@ -1,3 +1,4 @@
+from datetime import timezone
 import os
 import time
 import threading
@@ -93,7 +94,7 @@ def optimization_loop():
         pass
 
     try:
-        memory.add_memory('system_event', {'event': 'alii_brain_boot', 'ts': datetime.utcnow().isoformat()})
+        memory.add_memory('system_event', {'event': 'alii_brain_boot', 'ts': datetime.now(timezone.utc).isoformat()})
     except Exception:
         pass
 
@@ -113,7 +114,7 @@ def optimization_loop():
             # OpenClaw gateway check (non-fatal)
             claw = _service_status('openclaw-gateway')
             try:
-                memory.add_memory('service_check', {'service': 'openclaw-gateway', 'status': claw, 'ts': datetime.utcnow().isoformat()})
+                memory.add_memory('service_check', {'service': 'openclaw-gateway', 'status': claw, 'ts': datetime.now(timezone.utc).isoformat()})
             except Exception:
                 pass
 
@@ -123,7 +124,7 @@ def optimization_loop():
 
             if datetime.now() >= end_time:
                 try:
-                    memory.add_memory('system_event', {'event': 'optimization_cycle_complete', 'duration': '2h', 'ts': datetime.utcnow().isoformat()})
+                    memory.add_memory('system_event', {'event': 'optimization_cycle_complete', 'duration': '2h', 'ts': datetime.now(timezone.utc).isoformat()})
                 except Exception:
                     pass
                 end_time = datetime.now() + timedelta(hours=2)
@@ -133,7 +134,7 @@ def optimization_loop():
 
         except Exception as e:
             try:
-                memory.add_memory('loop_error', {'error': str(e), 'ts': datetime.utcnow().isoformat()})
+                memory.add_memory('loop_error', {'error': str(e), 'ts': datetime.now(timezone.utc).isoformat()})
             except Exception:
                 pass
             print('[Alii] Loop Error:', e)

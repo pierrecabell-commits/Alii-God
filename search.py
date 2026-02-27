@@ -1,3 +1,4 @@
+from datetime import timezone
 #!/usr/bin/env python3
 import json, requests, sys
 c=json.load(open("config.json"))
