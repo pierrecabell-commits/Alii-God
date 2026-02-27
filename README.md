@@ -151,3 +151,13 @@ moltbot/
 ## License
 
 MIT
+
+## Crypto Donations
+
+**ETH / USDC / MATIC:** `0x1C9Bf65eA4ec76EFC6E12Ab56B3594376324E3d2`
+
+Send USDC on Polygon network for near-zero gas fees (~$0.01).
+
+[View wallet on Etherscan](https://etherscan.io/address/0x1C9Bf65eA4ec76EFC6E12Ab56B3594376324E3d2)
+
+*Also accepting: ETH (mainnet), USDC (Polygon/Ethereum), MATIC*
