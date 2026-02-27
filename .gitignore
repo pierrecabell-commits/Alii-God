@@ -5,5 +5,14 @@
 *.corrupt.*
 __pycache__/
 *.pyc
+*.pyo
 config.json
 .env
+venv/
+.venv/
+logs/
+*.db
+*.lock
+.claude.json
+perf_data.json
+memory/
