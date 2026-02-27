@@ -1,0 +1,76 @@
+{
+  "timestamp": "2026-02-27T05:28:06.230256",
+  "python_files_checked": 64,
+  "missing_license_header": [
+    "/home/avalii/moltbot/money_maker/agent.py",
+    "/home/avalii/moltbot/simple_add.py",
+    "/home/avalii/moltbot/upgrade.py",
+    "/home/avalii/moltbot/autoscale.py",
+    "/home/avalii/moltbot/alii_ui.py",
+    "/home/avalii/moltbot/fix_ui.py",
+    "/home/avalii/moltbot/add_method_3.py",
+    "/home/avalii/moltbot/add_methods_script.py",
+    "/home/avalii/moltbot/correct_fix.py",
+    "/home/avalii/moltbot/autonomous_optimizer.py",
+    "/home/avalii/moltbot/ghost_simple.py",
+    "/home/avalii/moltbot/alfred.py",
+    "/home/avalii/moltbot/add_method_2.py",
+    "/home/avalii/moltbot/fix_autonomous.py",
+    "/home/avalii/moltbot/chat_advanced.py",
+    "/home/avalii/moltbot/add_method_5.py",
+    "/home/avalii/moltbot/deleted_archive/backup_autoexec.py",
+    "/home/avalii/moltbot/deleted_archive/moltbot_master_unified_backup_1770550040.py",
+    "/home/avalii/moltbot/deleted_archive/moltbot_backup.py",
+    "/home/avalii/moltbot/deleted_archive/moltbot_master_v1_backup.py",
+    "/home/avalii/moltbot/deleted_archive/backup_020911.py",
+    "/home/avalii/moltbot/deleted_archive/moltbot_master_unified_broken.py",
+    "/home/avalii/moltbot/deleted_archive/moltbot_master_unified_corrupted_backup.py",
+    "/home/avalii/moltbot/deleted_archive/backup_1770514914.py",
+    "/home/avalii/moltbot/deleted_archive/20260208_121617_20260208_121517_20260208_121417_20260208_121053_moltbot_master_old_backup.py",
+    "/home/avalii/moltbot/add_methods.py",
+    "/home/avalii/moltbot/ghost_alii.py",
+    "/home/avalii/moltbot/agents/media_agent.py",
+    "/home/avalii/moltbot/agents/optimizer.py",
+    "/home/avalii/moltbot/agents/law_agent.py",
+    "/home/avalii/moltbot/agents/money_agent.py",
+    "/home/avalii/moltbot/agents/security_agent.py",
+    "/home/avalii/moltbot/agents/imessage_agent.py",
+    "/home/avalii/moltbot/agents/protection.py",
+    "/home/avalii/moltbot/agents/__init__.py",
+    "/home/avalii/moltbot/moltbot.py",
+    "/home/avalii/moltbot/alii_self_modification.py",
+    "/home/avalii/moltbot/alii_distributed_brain.py",
+    "/home/avalii/moltbot/chat.py",
+    "/home/avalii/moltbot/fix_moltbot_unified.py",
+    "/home/avalii/moltbot/verify.py",
+    "/home/avalii/moltbot/memory_system.py",
+    "/home/avalii/moltbot/verify_storage.py",
+    "/home/avalii/moltbot/chat_interface.py",
+    "/home/avalii/moltbot/generate_ui.py",
+    "/home/avalii/moltbot/add_method_4.py",
+    "/home/avalii/moltbot/ultimate_fix.py",
+    "/home/avalii/moltbot/fix_syntax.py",
+    "/home/avalii/moltbot/build_unified.py",
+    "/home/avalii/moltbot/system_optimizer.py"
+  ],
+  "gpl_risk_imports": [
+    {
+      "file": "/home/avalii/moltbot/agents/law_agent.py",
+      "package": "mysql-connector"
+    },
+    {
+      "file": "/home/avalii/moltbot/agents/law_agent.py",
+      "package": "pyqt"
+    },
+    {
+      "file": "/home/avalii/moltbot/agents/law_agent.py",
+      "package": "wxpython"
+    },
+    {
+      "file": "/home/avalii/moltbot/agents/law_agent.py",
+      "package": "pyside"
+    }
+  ],
+  "recommendation": "Add SPDX license headers to all source files. Consider: # SPDX-License-Identifier: MIT",
+  "status": "review_needed"
+}
