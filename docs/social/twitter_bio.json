@@ -1,0 +1,9 @@
+{
+  "handle": "@alii_ai",
+  "bio": "Self-hosted AI agent platform. Local LLMs. Private memory. Alfred orchestrates everything. No subscriptions. Open source. Building in public. https://github.com",
+  "char_count": 160,
+  "privacy_audit": {
+    "status": "SAFE",
+    "findings": []
+  }
+}

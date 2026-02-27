@@ -395,6 +395,15 @@ class Alfred:
         # Start health monitoring
         self._health_task = asyncio.create_task(self._health_loop(), name="alfred-health")
 
+        # Schedule daily morning briefing at 07:00
+        asyncio.create_task(self._briefing_scheduler(), name="alfred-briefing")
+
+        # Schedule 09:00 daily agent runs (social sync, legal + business briefings)
+        asyncio.create_task(self._daily_agent_scheduler(), name="alfred-daily-agents")
+
+        # Start self-improvement loop (every 6 hours)
+        asyncio.create_task(self._learn_loop(), name="alfred-learn")
+
         # Start HTTP API
         app = self._build_app()
         runner = web.AppRunner(app)
@@ -417,6 +426,219 @@ class Alfred:
         self._save_state()
         record_event("alfred", "Alfred orchestrator stopped.")
         asyncio.get_event_loop().stop()
+
+    # ── Morning briefing ──────────────────────────────────────────────────────
+
+    def morning_briefing(self) -> str:
+        """
+        Collect full system stats and write a rich status report to logs/morning_briefing.log.
+        Called automatically at 7am via the _briefing_scheduler task.
+        """
+        import platform
+        import shutil
+
+        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+        # Service statuses
+        svc_lines = []
+        for name, spec in self.services.items():
+            uptime_str = ""
+            if spec.started_at:
+                secs = int(time.time() - spec.started_at)
+                uptime_str = f" (up {secs//3600}h {(secs%3600)//60}m)"
+            svc_lines.append(
+                f"  {name:<25} {spec.status:<10} restarts={spec.restarts}{uptime_str}"
+            )
+
+        # Disk usage
+        try:
+            disk = shutil.disk_usage(str(WORKDIR))
+            disk_str = (
+                f"{disk.used/1e9:.1f} GB used / {disk.total/1e9:.1f} GB total "
+                f"({100*disk.used/disk.total:.0f}%)"
+            )
+        except Exception:
+            disk_str = "unavailable"
+
+        # Memory
+        try:
+            with open("/proc/meminfo") as fh:
+                meminfo = dict(
+                    line.split(":", 1)
+                    for line in fh.read().splitlines()
+                    if ":" in line
+                )
+            mem_total = int(meminfo["MemTotal"].split()[0]) / 1024
+            mem_avail = int(meminfo["MemAvailable"].split()[0]) / 1024
+            mem_str   = f"{mem_avail:.0f} MB free / {mem_total:.0f} MB total"
+        except Exception:
+            mem_str = "unavailable"
+
+        # Load average
+        try:
+            load = os.getloadavg()
+            load_str = f"{load[0]:.2f} {load[1]:.2f} {load[2]:.2f}"
+        except Exception:
+            load_str = "unavailable"
+
+        # Alfred uptime
+        uptime_s = time.time() - self._start_time
+        alfred_uptime = f"{int(uptime_s)//3600}h {(int(uptime_s)%3600)//60}m"
+
+        # Recent git commits
+        try:
+            r = subprocess.run(
+                ["git", "-C", str(WORKDIR), "log", "--oneline", "-5"],
+                capture_output=True, text=True, timeout=5
+            )
+            commits = r.stdout.strip() or "(none)"
+        except Exception:
+            commits = "(git unavailable)"
+
+        # Todo summary
+        try:
+            tasks = json.loads((WORKDIR / "alfred_todo.json").read_text())
+            done_count  = sum(1 for t in tasks if t.get("done"))
+            total_count = len(tasks)
+            todo_str    = f"{done_count}/{total_count} tasks done"
+        except Exception:
+            todo_str = "unavailable"
+
+        report = (
+            f"╔══════════════════════════════════════════════════╗\n"
+            f"║        Alii Morning Briefing — {ts}   ║\n"
+            f"╚══════════════════════════════════════════════════╝\n"
+            f"\n[Alfred]\n"
+            f"  Uptime : {alfred_uptime}\n"
+            f"  Port   : {self.CONTROL_PORT}\n"
+            f"\n[Managed Services]\n"
+            + "\n".join(svc_lines) +
+            f"\n\n[System Resources]\n"
+            f"  Memory : {mem_str}\n"
+            f"  Disk   : {disk_str}\n"
+            f"  Load   : {load_str}\n"
+            f"  Host   : {platform.node()}\n"
+            f"\n[Recent Commits]\n{commits}\n"
+            f"\n[Todo]\n  {todo_str}\n"
+            f"\n{'='*52}\n"
+        )
+
+        briefing_log = LOG_DIR / "morning_briefing.log"
+        try:
+            with open(briefing_log, "a") as fh:
+                fh.write(report)
+        except Exception as exc:
+            log.warning("Could not write morning_briefing.log: %s", exc)
+
+        record_event("alfred", f"Morning briefing written: {ts}")
+        log.info("Morning briefing written to %s", briefing_log)
+        return report
+
+    async def _briefing_scheduler(self):
+        """Fire morning_briefing() every day at 07:00 local time."""
+        while True:
+            now = datetime.now()
+            # Seconds until next 07:00
+            target = now.replace(hour=7, minute=0, second=0, microsecond=0)
+            if now >= target:
+                # Already past 7am today — aim for tomorrow
+                from datetime import timedelta
+                target += timedelta(days=1)
+            wait_s = (target - now).total_seconds()
+            log.info("Morning briefing scheduled in %.0f seconds.", wait_s)
+            await asyncio.sleep(wait_s)
+            self.morning_briefing()
+
+    async def _daily_agent_scheduler(self):
+        """Fire social sync + legal + business briefings every day at 09:00."""
+        from datetime import timedelta
+        while True:
+            now = datetime.now()
+            target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            if now >= target:
+                target += timedelta(days=1)
+            await asyncio.sleep((target - now).total_seconds())
+            log.info("09:00 daily agent run starting.")
+            await asyncio.get_event_loop().run_in_executor(None, self._run_daily_agents)
+
+    def _run_daily_agents(self):
+        try:
+            sys.path.insert(0, str(WORKDIR))
+            from agents.social_agent import SocialAgent
+            SocialAgent().cross_platform_sync()
+            log.info("cross_platform_sync complete.")
+        except Exception as exc:
+            log.warning("cross_platform_sync error: %s", exc)
+        try:
+            from agents.law_agent import LawAgent
+            LawAgent().daily_legal_briefing()
+            log.info("daily_legal_briefing complete.")
+        except Exception as exc:
+            log.warning("daily_legal_briefing error: %s", exc)
+        try:
+            from agents.business_agent import BusinessAgent
+            BusinessAgent().daily_business_briefing()
+            log.info("daily_business_briefing complete.")
+        except Exception as exc:
+            log.warning("daily_business_briefing error: %s", exc)
+
+    async def _learn_loop(self):
+        """Self-improvement: reads logs every 6h, updates outcome weights in memory."""
+        while True:
+            await asyncio.sleep(6 * 3600)
+            await asyncio.get_event_loop().run_in_executor(None, self.learn_from_outcomes)
+
+    def learn_from_outcomes(self) -> dict:
+        """
+        Read recent logs, count restart events and health failures per service,
+        adjust restart_delay weights, persist updated weights to alfred_state.json.
+        """
+        weights: dict[str, dict] = {}
+        log_dir = LOG_DIR
+
+        # Parse all service logs for ERROR/WARN patterns
+        for name, spec in self.services.items():
+            log_path = log_dir / f"{name}.log"
+            restarts   = spec.restarts
+            errors     = 0
+            recoveries = 0
+            if log_path.exists():
+                try:
+                    lines = log_path.read_text(errors="replace").splitlines()[-500:]
+                    errors     = sum(1 for l in lines if "ERROR" in l or "CRITICAL" in l)
+                    recoveries = sum(1 for l in lines if "recovered" in l.lower() or "OK:" in l)
+                except Exception:
+                    pass
+
+            # Adaptive restart delay: more restarts → longer delay (back-off)
+            base_delay = 5.0
+            adaptive   = min(base_delay * (1 + restarts * 0.5), 60.0)
+            spec.restart_delay = adaptive
+
+            weights[name] = {
+                "restarts":      restarts,
+                "log_errors":    errors,
+                "log_recoveries": recoveries,
+                "adaptive_restart_delay": round(adaptive, 1),
+            }
+
+        record_event("alfred_learn", json.dumps(weights))
+        log.info("learn_from_outcomes: updated weights for %d services.", len(weights))
+
+        # Persist to state file
+        state = {}
+        if STATE_FILE.exists():
+            try:
+                state = json.loads(STATE_FILE.read_text())
+            except Exception:
+                pass
+        state["learned_weights"] = weights
+        state["last_learn"]      = datetime.utcnow().isoformat() + "Z"
+        try:
+            STATE_FILE.write_text(json.dumps(state, indent=2))
+        except Exception as exc:
+            log.debug("State write failed: %s", exc)
+        return weights
 
     def _save_state(self):
         state = {
