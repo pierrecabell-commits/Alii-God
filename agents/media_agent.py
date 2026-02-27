@@ -7,6 +7,7 @@ Handles posting, engagement tracking, and content scheduling across platforms.
 import json
 import logging
 import os
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -68,14 +69,90 @@ class MediaAgent:
         _record_event("media_agent", f"GitHub post stub: {repo} — {title}")
         return {"ok": True, "stub": True, "payload": payload}
 
-    def generate_release_notes(self, version: str, changelog: list[str]) -> str:
-        """Format a markdown release notes document from a changelog list."""
-        log.info("generate_release_notes: version=%s items=%d", version, len(changelog))
-        lines = [f"## Alii {version} — {datetime.utcnow().strftime('%Y-%m-%d')}", ""]
-        for item in changelog:
-            lines.append(f"- {item}")
-        notes = "\n".join(lines)
-        _record_event("media_agent", f"Release notes generated: {version}")
+    def generate_release_notes(self, version: str = "latest", changelog: list[str] | None = None) -> str:
+        """
+        Format a professional markdown changelog from git log.
+        If changelog items are not supplied, pulls them from git history.
+        Writes CHANGELOG.md in WORKDIR.
+        """
+        log.info("generate_release_notes: version=%s", version)
+
+        # Pull commits from git if no manual list supplied
+        if not changelog:
+            try:
+                r = subprocess.run(
+                    ["git", "-C", str(WORKDIR), "log",
+                     "--pretty=format:%h|%s|%an|%ad",
+                     "--date=short", "-50"],
+                    capture_output=True, text=True, timeout=10
+                )
+                raw_commits = r.stdout.strip().splitlines()
+            except Exception as exc:
+                log.warning("git log failed: %s", exc)
+                raw_commits = []
+        else:
+            raw_commits = []
+
+        # Categorise commits
+        categories: dict[str, list[str]] = {
+            "Features":       [],
+            "Bug Fixes":      [],
+            "Refactoring":    [],
+            "Documentation":  [],
+            "Chores":         [],
+            "Other":          [],
+        }
+
+        prefix_map = {
+            "feat":     "Features",
+            "fix":      "Bug Fixes",
+            "refactor": "Refactoring",
+            "docs":     "Documentation",
+            "chore":    "Chores",
+            "style":    "Chores",
+            "test":     "Chores",
+        }
+
+        if raw_commits:
+            for line in raw_commits:
+                parts = line.split("|", 3)
+                if len(parts) < 2:
+                    continue
+                sha, subject = parts[0], parts[1]
+                author = parts[2] if len(parts) > 2 else ""
+                date   = parts[3] if len(parts) > 3 else ""
+                bucket = "Other"
+                for prefix, cat in prefix_map.items():
+                    if subject.lower().startswith(prefix):
+                        bucket = cat
+                        break
+                categories[bucket].append(f"- `{sha}` {subject} _{author} ({date})_")
+        else:
+            for item in (changelog or []):
+                categories["Features"].append(f"- {item}")
+
+        ts      = datetime.utcnow().strftime("%Y-%m-%d")
+        v_label = version if version != "latest" else ts
+
+        md_lines = [
+            f"# Alii Changelog",
+            "",
+            f"## [{v_label}] — {ts}",
+            "",
+        ]
+
+        for cat, items in categories.items():
+            if items:
+                md_lines.append(f"### {cat}")
+                md_lines.extend(items)
+                md_lines.append("")
+
+        notes = "\n".join(md_lines)
+
+        changelog_path = WORKDIR / "CHANGELOG.md"
+        changelog_path.write_text(notes)
+        log.info("CHANGELOG.md written (%d bytes)", len(notes))
+        _record_event("media_agent", f"CHANGELOG.md generated: {v_label}")
         return notes
 
     def track_github_stars(self, repo: str) -> dict:

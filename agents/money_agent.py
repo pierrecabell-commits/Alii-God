@@ -7,13 +7,17 @@ Tracks metrics, analyses revenue streams, and generates daily financial reports.
 import json
 import logging
 import os
+import subprocess
+import urllib.request
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 
 log = logging.getLogger("alii.money_agent")
 
-WORKDIR  = Path("/home/avalii/moltbot")
-TODO_FILE = WORKDIR / "alfred_todo.json"
+WORKDIR       = Path("/home/avalii/moltbot")
+TODO_FILE     = WORKDIR / "alfred_todo.json"
+REVENUE_REPORT = WORKDIR / "memory" / "revenue_report.json"
 
 
 def _load_todo() -> list:
@@ -55,40 +59,118 @@ class MoneyAgent:
         _write_memory("money_agent", "MoneyAgent initialised.")
         log.info("MoneyAgent initialised.")
 
+    def _fetch_github_stars_curl(self, repo: str) -> int | None:
+        """Fetch GitHub star count using curl subprocess (no auth needed for public repos)."""
+        try:
+            r = subprocess.run(
+                ["curl", "-s", f"https://api.github.com/repos/{repo}"],
+                capture_output=True, text=True, timeout=10
+            )
+            if r.returncode == 0:
+                data = json.loads(r.stdout)
+                return data.get("stargazers_count")
+        except Exception as exc:
+            log.warning("curl GitHub fetch failed: %s", exc)
+        return None
+
+    def _git_remote_repo(self) -> str | None:
+        """Detect the GitHub repo slug from git remote origin."""
+        try:
+            r = subprocess.run(
+                ["git", "-C", str(WORKDIR), "remote", "get-url", "origin"],
+                capture_output=True, text=True, timeout=5
+            )
+            url = r.stdout.strip()
+            # https://github.com/user/repo.git  or  git@github.com:user/repo.git
+            if "github.com" in url:
+                slug = url.split("github.com")[-1].lstrip(":/").removesuffix(".git")
+                return slug
+        except Exception:
+            pass
+        return None
+
     def analyze_revenue_streams(self) -> dict:
         """
-        Survey all known revenue streams and return a structured summary.
-        Streams: GitHub Sponsors, Kickstarter, consulting, SaaS subscription.
+        Survey all known revenue streams, fetch live GitHub data, and write revenue_report.json.
         """
         log.info("analyze_revenue_streams called.")
+
+        # Live GitHub star count
+        repo_slug = self._git_remote_repo()
+        stars = None
+        if repo_slug:
+            stars = self._fetch_github_stars_curl(repo_slug)
+            log.info("GitHub stars for %s: %s", repo_slug, stars)
+
+        # System uptime info
+        try:
+            uptime_r = subprocess.run(["uptime", "-p"], capture_output=True, text=True)
+            uptime = uptime_r.stdout.strip()
+        except Exception:
+            uptime = "unknown"
+
+        # Alfred service status
+        try:
+            svc_r = subprocess.run(
+                ["systemctl", "--user", "is-active", "alfred.service"],
+                capture_output=True, text=True
+            )
+            alfred_status = svc_r.stdout.strip()
+        except Exception:
+            alfred_status = "unknown"
+
         streams = {
             "github_sponsors": {
                 "active": bool(self.github_token),
                 "monthly_usd": None,
-                "note": "Configure GitHub Sponsors on the repo page.",
+                "github_stars": stars,
+                "github_repo": repo_slug,
+                "note": "Enable Sponsors at github.com/sponsors/dashboard",
+                "action_required": not bool(self.github_token),
             },
             "kickstarter": {
                 "active": False,
-                "pledged_usd": None,
+                "goal_usd": 10000,
+                "pledged_usd": 0,
                 "note": "Draft campaign not yet launched.",
+                "action_required": True,
             },
             "saas_subscription": {
                 "active": False,
                 "mrr_usd": None,
-                "note": "No hosted offering yet.",
+                "note": "No hosted offering yet. Consider Stripe + hosted Alii tier.",
+                "action_required": True,
             },
             "consulting": {
                 "active": False,
                 "hourly_rate_usd": None,
-                "note": "Set a rate and post availability.",
+                "note": "Post availability on LinkedIn / Upwork.",
+                "action_required": True,
             },
         }
+
+        immediate_actions = [
+            "1. Push repo to GitHub: gh repo create alii --public --source=. --push",
+            "2. Enable GitHub Sponsors: https://github.com/sponsors/dashboard",
+            "3. Create $5/$20/$99 sponsor tiers",
+            "4. Write a project description and add topics on GitHub",
+            "5. Post on r/selfhosted and r/MachineLearning",
+            "6. Draft Kickstarter campaign page",
+        ]
+
         result = {
             "timestamp": datetime.utcnow().isoformat() + "Z",
+            "system_uptime": uptime,
+            "alfred_status": alfred_status,
             "streams": streams,
             "total_mrr_usd": 0,
+            "immediate_actions": immediate_actions,
         }
-        _write_memory("money_agent", f"Revenue stream analysis: {json.dumps(result)}")
+
+        REVENUE_REPORT.parent.mkdir(parents=True, exist_ok=True)
+        REVENUE_REPORT.write_text(json.dumps(result, indent=2))
+        log.info("revenue_report.json written to %s", REVENUE_REPORT)
+        _write_memory("money_agent", f"Revenue analysis written. Stars: {stars}")
         return result
 
     def track_github_stars(self, repo: str = "your-username/alii") -> dict:

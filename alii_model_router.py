@@ -1,3 +1,4 @@
+from datetime import timezone
 #!/usr/bin/env python3
 """
 ALII MODEL ROUTER - Intelligent speed-optimized model switching
@@ -37,7 +38,7 @@ TASK_ROUTING = {
     "default":       ["dolphin-llama3:8b", "qwen2.5:7b"],
 }
 
-OLLAMA_OPTIONS = {"num_thread": 10, "num_batch": 512, "num_ctx": 4096, "repeat_penalty": 1.1}
+OLLAMA_OPTIONS = {"num_thread": 16, "num_batch": 1024, "num_ctx": 8192, "num_gpu": 99, "repeat_penalty": 1.1, "use_mmap": True, "use_mlock": True}
 
 class AliiModelRouter:
     def __init__(self):
@@ -148,5 +149,5 @@ if __name__ == "__main__":
     print(f"Fastest model: {router.get_fastest_model()}")
     tests = ["write a python function", "say hi", "analyze this and explain"]
     for t in tests:
-        print(f"  classify({t!r[:40]}) -> {router.classify_task(t)}")
+        print(f"  classify({t[:40]!r}) -> {router.classify_task(t)}")
     print("Router operational.")
