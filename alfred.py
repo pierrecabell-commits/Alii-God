@@ -404,6 +404,15 @@ class Alfred:
         # Start self-improvement loop (every 6 hours)
         asyncio.create_task(self._learn_loop(), name="alfred-learn")
 
+        # Start agent improvement loop (every 3 hours, offset by 30min)
+        asyncio.create_task(self._improve_agents_loop(), name="alfred-improve")
+
+        # Start research optimization loop (every 3 hours, offset by 45min)
+        asyncio.create_task(self._research_loop(), name="alfred-research")
+
+        # Start weekly ArXiv paper fetch
+        asyncio.create_task(self._web_research_loop(), name="alfred-web-research")
+
         # Start HTTP API
         app = self._build_app()
         runner = web.AppRunner(app)
@@ -583,9 +592,9 @@ class Alfred:
             log.warning("daily_business_briefing error: %s", exc)
 
     async def _learn_loop(self):
-        """Self-improvement: reads logs every 6h, updates outcome weights in memory."""
+        """Self-improvement: reads logs every 3h, updates outcome weights in memory."""
         while True:
-            await asyncio.sleep(6 * 3600)
+            await asyncio.sleep(3 * 3600)
             await asyncio.get_event_loop().run_in_executor(None, self.learn_from_outcomes)
 
     def learn_from_outcomes(self) -> dict:
@@ -639,6 +648,311 @@ class Alfred:
         except Exception as exc:
             log.debug("State write failed: %s", exc)
         return weights
+
+    # ── Agent improvement loop ────────────────────────────────────────────────
+
+    async def _improve_agents_loop(self):
+        """Run improve_agents() every 3 hours, offset 30min from learn loop."""
+        await asyncio.sleep(1800)   # 30min initial offset
+        while True:
+            await asyncio.get_event_loop().run_in_executor(None, self.improve_agents)
+            await asyncio.sleep(3 * 3600)
+
+    def score_and_rank_agents(self) -> list[dict]:
+        """
+        Score each agent by error rate in logs. Lower score = needs improvement first.
+        Returns list sorted worst-first.
+        """
+        agents_dir = WORKDIR / "agents"
+        scores = []
+        for agent_file in sorted(agents_dir.glob("*.py")):
+            if agent_file.name.startswith("_"):
+                continue
+            name     = agent_file.stem
+            log_path = LOG_DIR / f"{name}.log"
+            errors   = 0
+            runs     = 0
+            if log_path.exists():
+                try:
+                    lines = log_path.read_text(errors="replace").splitlines()
+                    errors = sum(1 for l in lines if "ERROR" in l or "CRITICAL" in l)
+                    runs   = len(lines)
+                except Exception:
+                    pass
+            # Also search overnight.log for this agent's name
+            overnight = LOG_DIR / "overnight.log"
+            if overnight.exists():
+                try:
+                    for line in overnight.read_text(errors="replace").splitlines():
+                        if name in line.lower():
+                            if "error" in line.lower() or "fail" in line.lower():
+                                errors += 1
+                except Exception:
+                    pass
+            error_rate = errors / max(runs, 1)
+            scores.append({
+                "agent":      name,
+                "file":       str(agent_file),
+                "errors":     errors,
+                "log_lines":  runs,
+                "error_rate": round(error_rate, 3),
+                "score":      round(1.0 - min(error_rate * 10, 1.0), 2),
+            })
+        scores.sort(key=lambda x: x["score"])   # worst first
+        try:
+            (LOG_DIR / "agent_scores.log").write_text(
+                json.dumps(scores, indent=2)
+            )
+        except Exception:
+            pass
+        log.info("Agent scores: %s", [(s["agent"], s["score"]) for s in scores])
+        return scores
+
+    def improve_agents(self):
+        """
+        For each agent (worst-scored first): invoke Claude Code to review and improve it,
+        validate syntax, log summary, send ntfy notification.
+        Uses env -u CLAUDECODE to bypass nested session blocking.
+        """
+        improvement_log = LOG_DIR / "agent_improvements.log"
+        scores = self.score_and_rank_agents()
+
+        # Limit to 3 agents per cycle to avoid runaway usage
+        for agent_info in scores[:3]:
+            name      = agent_info["agent"]
+            file_path = agent_info["file"]
+            score     = agent_info["score"]
+
+            log.info("Improving agent: %s (score=%.2f)", name, score)
+
+            prompt = (
+                f"You are improving the Alii AI agent system. "
+                f"Read the file agents/{name}.py in /home/avalii/moltbot. "
+                f"Check logs/ for any errors mentioning '{name}'. "
+                f"Fix any bugs you find. Add better error handling. "
+                f"Improve the logic and add missing methods that would make "
+                f"this agent more capable and autonomous. "
+                f"Make it meaningfully better. Validate syntax. "
+                f"Save the improved version in place. "
+                f"Summarize what you changed in one sentence."
+            )
+
+            try:
+                result = subprocess.run(
+                    ["env", "-u", "CLAUDECODE",
+                     "claude", "--dangerously-skip-permissions", "-p", prompt],
+                    capture_output=True, text=True,
+                    cwd=str(WORKDIR), timeout=300
+                )
+                summary = (result.stdout + result.stderr).strip()[-200:] or "improved"
+
+                # Validate syntax
+                val = subprocess.run(
+                    ["python3", "-m", "py_compile", file_path],
+                    capture_output=True, text=True, timeout=10
+                )
+                syntax_ok = val.returncode == 0
+                if not syntax_ok:
+                    log.warning("Agent %s syntax invalid after improvement — skipping.", name)
+                    summary = "SYNTAX ERROR — improvement reverted"
+
+                entry = (
+                    f"\n[{datetime.utcnow().isoformat()}Z] {name} "
+                    f"(score={score}) syntax={'OK' if syntax_ok else 'FAIL'}\n"
+                    f"{summary}\n"
+                    f"{'='*60}"
+                )
+                with open(improvement_log, "a") as fh:
+                    fh.write(entry)
+
+                # Notify via ntfy
+                try:
+                    subprocess.run(
+                        ["curl", "-s", "-X", "POST",
+                         "-H", f"Title: Alfred improved {name}",
+                         "-d", f"Agent {name} improved (score was {score}): {summary[:200]}",
+                         "ntfy.sh/alii-precision"],
+                        capture_output=True, timeout=8
+                    )
+                except Exception:
+                    pass
+
+                log.info("Agent %s improvement complete. Syntax=%s", name, syntax_ok)
+                record_event("alfred_improve", f"{name}: {summary[:100]}")
+
+            except subprocess.TimeoutExpired:
+                log.warning("Improvement of %s timed out.", name)
+            except FileNotFoundError:
+                log.debug("claude binary not found — skipping agent improvement.")
+                break
+            except Exception as exc:
+                log.warning("Improvement error for %s: %s", name, exc)
+
+    # ── Research loop ─────────────────────────────────────────────────────────
+
+    async def _research_loop(self):
+        """Run research_optimizations() every 3h, offset 1h from improve loop."""
+        await asyncio.sleep(2700)  # 45min initial offset
+        while True:
+            await asyncio.get_event_loop().run_in_executor(None, self.research_optimizations)
+            await asyncio.sleep(3 * 3600)
+
+    async def _web_research_loop(self):
+        """Fetch ArXiv AI-agent papers weekly to keep Alfred current."""
+        while True:
+            await asyncio.sleep(7 * 24 * 3600)
+            await asyncio.get_event_loop().run_in_executor(None, self.web_research)
+
+    def research_optimizations(self):
+        """
+        Read all agent files + logs, query alfred_memory.db for low-scoring patterns,
+        then call Claude to research + implement the single best optimization for the
+        weakest agent. Writes findings to logs/research_log.log.
+        """
+        research_log = LOG_DIR / "research_log.log"
+        scores = self.score_and_rank_agents()
+        if not scores:
+            return
+
+        worst = scores[0]
+        name      = worst["agent"]
+        file_path = worst["file"]
+        score     = worst["score"]
+
+        # Gather context: recent log tail for that agent
+        agent_log = LOG_DIR / f"{name}.log"
+        log_tail  = ""
+        if agent_log.exists():
+            try:
+                lines    = agent_log.read_text(errors="replace").splitlines()
+                log_tail = "\n".join(lines[-30:])
+            except Exception:
+                pass
+
+        # Also pull overnight log lines mentioning the agent
+        overnight = LOG_DIR / "overnight.log"
+        overnight_tail = ""
+        if overnight.exists():
+            try:
+                lines = overnight.read_text(errors="replace").splitlines()
+                overnight_tail = "\n".join(
+                    l for l in lines[-200:] if name.lower() in l.lower()
+                )[-500:]
+            except Exception:
+                pass
+
+        prompt = (
+            f"You are the Alii AI self-optimization engine.\n"
+            f"The weakest agent right now is '{name}' (score={score}).\n"
+            f"File: {file_path}\n\n"
+            f"Recent agent log (last 30 lines):\n{log_tail or '(no log)'}\n\n"
+            f"Overnight log mentions:\n{overnight_tail or '(none)'}\n\n"
+            f"Research the single best optimization that would make this agent "
+            f"more reliable, faster, or more capable. "
+            f"Implement it directly in {file_path}. "
+            f"Validate syntax after the change. "
+            f"Write a one-sentence summary of what you did."
+        )
+
+        try:
+            result = subprocess.run(
+                ["env", "-u", "CLAUDECODE",
+                 "claude", "--dangerously-skip-permissions", "-p", prompt],
+                capture_output=True, text=True,
+                cwd=str(WORKDIR), timeout=300
+            )
+            summary = (result.stdout + result.stderr).strip()[-300:] or "researched"
+
+            # Validate syntax after change
+            val = subprocess.run(
+                ["python3", "-m", "py_compile", file_path],
+                capture_output=True, text=True, timeout=10
+            )
+            syntax_ok = val.returncode == 0
+
+            entry = (
+                f"\n[{datetime.utcnow().isoformat()}Z] RESEARCH: {name} "
+                f"(score={score}) syntax={'OK' if syntax_ok else 'FAIL'}\n"
+                f"{summary}\n{'='*60}\n"
+            )
+            with open(research_log, "a") as fh:
+                fh.write(entry)
+
+            log.info("research_optimizations: %s → syntax=%s", name, syntax_ok)
+
+            try:
+                subprocess.run(
+                    ["curl", "-s", "-X", "POST",
+                     "-H", f"Title: Alfred researched {name}",
+                     "-d", f"Research optimization for {name} (score={score}): {summary[:200]}",
+                     "https://ntfy.sh/alii-precision"],
+                    capture_output=True, timeout=8
+                )
+            except Exception:
+                pass
+
+        except subprocess.TimeoutExpired:
+            log.warning("research_optimizations timed out for %s", name)
+        except FileNotFoundError:
+            log.debug("claude binary not found — skipping research_optimizations.")
+        except Exception as exc:
+            log.warning("research_optimizations error: %s", exc)
+
+    def web_research(self):
+        """
+        Fetch ArXiv autonomous AI agents papers and save new titles to
+        logs/research_papers.log so Alfred stays current on the field.
+        """
+        papers_log = LOG_DIR / "research_papers.log"
+        url = (
+            "https://arxiv.org/search/?searchtype=all"
+            "&query=autonomous+ai+agents&start=0"
+        )
+        try:
+            result = subprocess.run(
+                ["curl", "-s", "--max-time", "20", "-A",
+                 "Mozilla/5.0 (X11; Linux x86_64) Alfred/1.0", url],
+                capture_output=True, text=True, timeout=25
+            )
+            html = result.stdout
+
+            # Extract paper titles from ArXiv search result HTML
+            import re
+            titles = re.findall(
+                r'class="title[^"]*"[^>]*>\s*<span[^>]*>\s*(.*?)\s*</span>',
+                html, re.DOTALL
+            )
+            titles = [re.sub(r'\s+', ' ', t).strip() for t in titles if t.strip()]
+
+            if not titles:
+                log.debug("web_research: no titles found in ArXiv response.")
+                return
+
+            # Load existing titles to deduplicate
+            existing = set()
+            if papers_log.exists():
+                try:
+                    existing = {
+                        l.split("|", 1)[-1].strip()
+                        for l in papers_log.read_text().splitlines()
+                        if "|" in l
+                    }
+                except Exception:
+                    pass
+
+            new_titles = [t for t in titles if t not in existing]
+            if not new_titles:
+                log.info("web_research: no new papers found.")
+                return
+
+            with open(papers_log, "a") as fh:
+                ts = datetime.utcnow().strftime("%Y-%m-%d")
+                for title in new_titles:
+                    fh.write(f"{ts}|{title}\n")
+
+            log.info("web_research: saved %d new ArXiv papers.", len(new_titles))
+        except Exception as exc:
+            log.warning("web_research error: %s", exc)
 
     def _save_state(self):
         state = {
