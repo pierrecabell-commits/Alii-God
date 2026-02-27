@@ -16,3 +16,6 @@ logs/
 .claude.json
 perf_data.json
 memory/
+
+# Encrypted credential vault — never commit
+accounts/vault.json
