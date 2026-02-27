@@ -33,11 +33,23 @@ def _write_memory(category: str, content: str):
 
 
 class BusinessAgent:
-    """World-class AI startup strategist and virtual CFO for Alii AI LLC."""
+    """
+    World-class AI startup strategist and virtual CFO for Alii AI LLC.
+
+    ZERO-COST-FIRST STRATEGY: Pierre starts with zero capital.
+    Every recommended action must be free to start and able to generate
+    real income within 7 days. Priority order:
+    1. GitHub Sponsors + Ko-fi (free, instant, community-funded)
+    2. Freelance services on Upwork/Fiverr ($150-500/project, skills already built)
+    3. OSS monetization: Polar.sh, thanks.dev, Open Collective (all free)
+    4. HackerNews Show HN post (free, can go viral and fund the whole project)
+    5. Product Hunt Upcoming page (free, builds email waitlist)
+    Capital-intensive options (Kickstarter, SaaS hosting, ads) come LATER.
+    """
 
     def __init__(self):
         BIZ_DIR.mkdir(parents=True, exist_ok=True)
-        log.info("BusinessAgent initialised.")
+        log.info("BusinessAgent initialised — zero-cost-first mode.")
 
     # ── (a) Business Plan ─────────────────────────────────────────────────────
 
