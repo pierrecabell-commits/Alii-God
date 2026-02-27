@@ -1,0 +1,77 @@
+[
+  {
+    "task": "Run: git init (if not already done) and create initial commit",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Create GitHub remote: gh repo create alii --public --source=. --remote=origin --push",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Set up GitHub Sponsors: enable on repo settings page, create tiers ($5/$20/$99)",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Create Kickstarter draft campaign for Alii autonomous AI system",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Install network tools: sudo apt install -y nmap masscan",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Build Docker image: docker build -t alii:latest . (write Dockerfile first)",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Set GITHUB_TOKEN environment variable for MediaAgent and MoneyAgent",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Set TWITTER_API_KEY for MediaAgent.post_to_twitter",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Configure REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET for MediaAgent.post_to_reddit",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Configure LINKEDIN_TOKEN for MediaAgent.post_to_linkedin",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Set ANTHROPIC_API_KEY in .env for Claude Code integrations",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Set PERPLEXITY_API_KEY in .env for web search integration",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Write Dockerfile for Alii system (Python 3.11, Ollama, Chainlit, Alfred)",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Launch SecurityAgent.generate_threat_report and review output",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  },
+  {
+    "task": "Run MoneyAgent.generate_daily_report and review monetisation status",
+    "created_at": "2026-02-27T00:00:00Z",
+    "done": false
+  }
+]
