@@ -50,7 +50,7 @@ log "ERROR: Still down after restart. Dumping logs and invoking Claude..."
 PROMPT="Alii UI is down on port $PORT. Steps: (1) run: journalctl --user -u alii-ui.service -n 100 --no-pager to see crash logs; (2) run: python3 -m py_compile /home/avalii/moltbot/alii_ui.py /home/avalii/moltbot/alii_model_router.py to check syntax; (3) fix any errors found in those files; (4) run: systemctl --user restart alii-ui.service; (5) confirm: ss -lntp | grep $PORT. Working directory: $WORKDIR"
 
 cd "$WORKDIR"
-env -u CLAUDECODE claude --dangerously-skip-permissions -p "$PROMPT" >> "$LOG" 2>&1 || \
+alii-claude -p "$PROMPT" >> "$LOG" 2>&1 || \
     log "ERROR: Claude invocation failed (exit $?)"
 
 sleep 10

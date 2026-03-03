@@ -1,0 +1,17 @@
+[Unit]
+Description=Alii LiteLLM Router - Local LLM Gateway on :4000
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=avalii
+WorkingDirectory=/home/avalii/moltbot
+EnvironmentFile=/home/avalii/moltbot/.env
+ExecStart=/home/avalii/.local/bin/litellm --config /home/avalii/moltbot/litellm_config.yaml --port 4000 --host 0.0.0.0
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/avalii/moltbot/logs/litellm.log
+StandardError=append:/home/avalii/moltbot/logs/litellm.log
+
+[Install]
+WantedBy=default.target

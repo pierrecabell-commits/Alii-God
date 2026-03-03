@@ -1,532 +1,277 @@
 #!/usr/bin/env python3
 """
-iMessageAgent — Two-way iMessage bridge between Pierre's iPhone and Alii.
+iMessage Agent — BlueBubbles REST API primary, SSH AppleScript fallback.
+Polls every 10s for new messages from owner's phone. Routes as commands.
 
-Architecture:
-  Precision  --SSH-->  MacBook (Messages.app)  <-->  iPhone (iMessage)
-
-  SEND:  ssh MACBOOK osascript -e 'tell app Messages to send MSG to buddy PHONE'
-  READ:  ssh MACBOOK osascript -e 'tell app Messages ...'
-  POLL:  Every 15s — check for new messages, route as commands, reply.
-
-SSH SETUP (one-time on MacBook):
-  1. System Settings > General > Sharing > Remote Login → ENABLE
-  2. In Terminal on MacBook:
-       mkdir -p ~/.ssh
-       cat >> ~/.ssh/authorized_keys << 'KEY'
-       ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCxoBP0QbY+EW+H0fFHvdm3FnRlBOgUuM0s69j99tB2TWAAWghnRTAVp4dj4Ep2WA84PUA8WlI83lhArqJicvBamsQfKf1oYUxljvGMUaiMTOD+WO0FrHRK9t7V2VIB9v0n7fnXH++Nw29OhQ004i8HZuTWk0r2SnkxQvp7/zUj/r1BoSg8OcsEc2yPLugheKAo5s1KW8+N2X+0gxD12hIZzPmKCy1SoFy9AMkv22JzubzEZY18VHTUEwcrzULoPTabaA5OdDeLpE/B3y8yO6pW8JFb1q58ertBhlgrJFnU3PQXRJWNZoCSZxyujcn4fRfS8dGTs+oL0Rfc7uY8j4Ok5YOqKpaLulJK6F8zXZ31c2GiNw8q/0HLjB+n0C94sEMRtrNiOcZMMJajEy+ulNeO5H6jLuhLGws68fiztome8B+28YNfF+qhJmWZ2MOCztIJgQNL3E3gmESuBn8CM3SRvzBRsot4TukXE7gsozgNVS2HrtjQTv8L7O1sEVlU/VHTb+oW37OMrsKoxGwyCpFt8Sj1OuOXrX8ufWE9KRpSQmbxGAOA5mMFYsXjXeKjWRW26wrGgqtEXqCcjM8BsAUL3X7BpiAMVwZRMoBR6ll66ibnSrVx3EfXK4pExR9q1KhuUwpzC0v+F4b1Rv4B1aK+cCnNCrLDoVRkofGITtCDNw== avalii@aliirecision
-       KEY
-       chmod 600 ~/.ssh/authorized_keys
+BlueBubbles setup: https://bluebubbles.app — run on macOS host, expose on Tailscale.
 """
 
-import json
-import logging
-import os
-import subprocess
-import sys
-import time
+import json, logging, os, subprocess, sys, time, requests
 from datetime import datetime
 from pathlib import Path
 
-log = logging.getLogger("alii.imessage")
+sys.path.insert(0, "/home/avalii/moltbot")
+try:
+    from vault.vault_client import get_secret
+except ImportError:
+    def get_secret(k, d=None): return os.getenv(k, d)
+
+LOG_FILE   = Path("/home/avalii/moltbot/logs/imessage_agent.log")
+STATE_FILE = Path("/home/avalii/moltbot/memory/imessage_bb_state.json")
+WORKDIR    = Path("/home/avalii/moltbot")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [imessage] %(levelname)s %(message)s",
-    handlers=[
-        logging.FileHandler("/home/avalii/moltbot/logs/imessage_agent.log"),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler(sys.stdout)],
 )
+log = logging.getLogger("alii.imessage")
 
-WORKDIR      = Path("/home/avalii/moltbot")
-PENDING_FILE = WORKDIR / "pending_messages.json"
-STATE_FILE   = WORKDIR / "memory" / "imessage_state.json"
-TODO_FILE    = WORKDIR / "alfred_todo.json"
+def _cfg(key, default=None):
+    return get_secret(key, os.getenv(key, default))
 
-# Try local IP first (faster), fall back to Tailscale
-MACBOOK_LOCAL     = os.getenv("MACBOOK_LOCAL_IP",    "192.168.1.98")
-MACBOOK_TAILSCALE = os.getenv("MACBOOK_TAILSCALE_IP","100.111.127.89")
-MACBOOK_USER      = os.getenv("MACBOOK_SSH_USER",    "pierre")
-MY_PHONE          = os.getenv("ALII_PHONE_NUMBER",   "")   # Pierre's number — set in .env
+def _state() -> dict:
+    if STATE_FILE.exists():
+        try: return json.loads(STATE_FILE.read_text())
+        except (json.JSONDecodeError, OSError): pass
+    return {}
 
-POLL_INTERVAL = 15   # seconds between message checks
+def _save_state(s: dict):
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps(s, indent=2))
 
-SSH_OPTS = [
-    "-o", "StrictHostKeyChecking=no",
-    "-o", "ConnectTimeout=5",
-    "-o", "BatchMode=yes",
-    "-o", "PasswordAuthentication=no",
-]
+def ntfy(msg: str, title: str = "iMessage"):
+    try:
+        requests.post("http://localhost:8080/alii-imessage",
+                      data=msg.encode(), headers={"Title": title}, timeout=3)
+    except requests.RequestException: pass
 
-# Whitelisted commands for 'run:' routing
-SAFE_COMMANDS = {
-    "status":        ["systemctl", "--user", "status", "alfred.service", "--no-pager"],
-    "logs":          ["tail", "-50", str(WORKDIR / "logs" / "overnight.log")],
-    "watchdog":      ["tail", "-20", str(WORKDIR / "logs" / "watchdog.log")],
-    "git":           ["git", "-C", str(WORKDIR), "log", "--oneline", "-10"],
-    "alfred logs":   ["tail", "-30", str(WORKDIR / "logs" / "alfred.log")],
-    "todo":          None,   # handled specially
-    "morning":       None,   # handled specially
-}
+# ── BlueBubbles API ────────────────────────────────────────────────────────────
 
+class BlueBubblesClient:
+    def __init__(self):
+        self.url      = _cfg("BLUEBUBBLES_URL", "").rstrip("/")
+        self.password = _cfg("BLUEBUBBLES_PASSWORD", "")
+        self.timeout  = 10
 
-# ── SSH helpers ────────────────────────────────────────────────────────────────
-
-def _macbook_ip() -> str:
-    """Return whichever MacBook IP responds first."""
-    for ip in [MACBOOK_LOCAL, MACBOOK_TAILSCALE]:
+    def _get(self, path: str, **params) -> dict | None:
+        if not self.url:
+            return None
         try:
-            r = subprocess.run(
-                ["ssh"] + SSH_OPTS + [f"{MACBOOK_USER}@{ip}", "echo pong"],
-                capture_output=True, text=True, timeout=6
-            )
-            if r.returncode == 0:
-                return ip
-        except Exception:
-            pass
-    return MACBOOK_TAILSCALE   # default even if unreachable
+            r = requests.get(f"{self.url}{path}",
+                             params={"password": self.password, **params},
+                             timeout=self.timeout)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            log.debug(f"BlueBubbles GET {path} error: {e}")
+            return None
 
-
-def _ssh(ip: str, cmd: str, timeout: int = 15) -> tuple[int, str]:
-    """Run a command on the MacBook via SSH. Returns (returncode, output)."""
-    result = subprocess.run(
-        ["ssh"] + SSH_OPTS + [f"{MACBOOK_USER}@{ip}", cmd],
-        capture_output=True, text=True, timeout=timeout
-    )
-    return result.returncode, (result.stdout + result.stderr).strip()
-
-
-def ssh_available() -> bool:
-    try:
-        rc, _ = _ssh(_macbook_ip(), "echo pong", timeout=6)
-        return rc == 0
-    except Exception:
-        return False
-
-
-# ── Send ──────────────────────────────────────────────────────────────────────
-
-def send_imessage(to: str, msg: str) -> dict:
-    """
-    Send an iMessage to phone number or Apple ID via MacBook Messages.app.
-    Falls back to pending_messages.json queue if SSH unavailable.
-    """
-    if not to:
-        log.error("send_imessage: 'to' is empty")
-        return {"ok": False, "error": "recipient empty"}
-
-    # Escape for AppleScript
-    safe = msg.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-
-    applescript = (
-        f'tell application "Messages"\\n'
-        f'  set s to first service whose service type is iMessage\\n'
-        f'  set b to buddy "{to}" of s\\n'
-        f'  send "{safe}" to b\\n'
-        f'end tell'
-    )
-
-    ip = _macbook_ip()
-    log.info("Sending iMessage to %s via %s", to[:6] + "***", ip)
-    try:
-        rc, out = _ssh(ip, f"osascript -e '{applescript}'")
-        if rc == 0:
-            log.info("iMessage sent OK")
-            return {"ok": True, "to": to[:6] + "***", "via": ip}
-        else:
-            log.warning("osascript failed: %s", out)
-            _queue(to, msg)
-            return {"ok": False, "error": out, "queued": True}
-    except subprocess.TimeoutExpired:
-        log.warning("SSH timeout — queuing message")
-        _queue(to, msg)
-        return {"ok": False, "error": "SSH timeout", "queued": True}
-    except Exception as exc:
-        log.warning("SSH error: %s — queuing", exc)
-        _queue(to, msg)
-        return {"ok": False, "error": str(exc), "queued": True}
-
-
-def _queue(to: str, msg: str):
-    pending = []
-    if PENDING_FILE.exists():
+    def _post(self, path: str, data: dict) -> dict | None:
+        if not self.url:
+            return None
         try:
-            pending = json.loads(PENDING_FILE.read_text())
-        except Exception:
-            pass
-    pending.append({"to": to, "msg": msg, "queued_at": datetime.now().isoformat()})
-    PENDING_FILE.write_text(json.dumps(pending, indent=2))
+            r = requests.post(f"{self.url}{path}",
+                              json={**data, "password": self.password},
+                              timeout=self.timeout)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            log.debug(f"BlueBubbles POST {path} error: {e}")
+            return None
 
+    def available(self) -> bool:
+        r = self._get("/api/v1/server/info")
+        return r is not None
 
-def retry_pending() -> int:
-    if not PENDING_FILE.exists():
-        return 0
-    try:
-        pending = json.loads(PENDING_FILE.read_text())
-    except Exception:
-        return 0
-    unsent = []
-    sent = 0
-    for item in pending:
-        r = send_imessage(item["to"], item["msg"])
-        if r.get("ok"):
-            sent += 1
-        else:
-            unsent.append(item)
-    PENDING_FILE.write_text(json.dumps(unsent, indent=2))
-    return sent
+    def message_count(self) -> int | None:
+        r = self._get("/api/v1/message/count")
+        if r and "data" in r:
+            return r["data"].get("total", 0)
+        return None
 
-
-# ── Read ──────────────────────────────────────────────────────────────────────
-
-def read_recent_messages(chat_index: int = 1, count: int = 5) -> list[dict]:
-    """
-    Read the most recent messages from the first iMessage chat on the MacBook.
-    Returns list of {sender, text, date} dicts.
-    """
-    # AppleScript to read last N messages from first chat
-    applescript = (
-        f'set output to ""\\n'
-        f'tell application "Messages"\\n'
-        f'  set theChat to item 1 of (chats whose service type is iMessage)\\n'
-        f'  set msgs to messages of theChat\\n'
-        f'  set startIdx to (count of msgs) - {count} + 1\\n'
-        f'  if startIdx < 1 then set startIdx to 1\\n'
-        f'  repeat with i from startIdx to count of msgs\\n'
-        f'    set m to item i of msgs\\n'
-        f'    set output to output & (date of m as string) & "|" & (sender of m as string) & "|" & (content of m) & "\\n"\\n'
-        f'  end repeat\\n'
-        f'end tell\\n'
-        f'return output'
-    )
-    ip = _macbook_ip()
-    try:
-        rc, out = _ssh(ip, f"osascript -e '{applescript}'", timeout=10)
-        if rc != 0 or not out.strip():
-            return []
-        messages = []
-        for line in out.strip().splitlines():
-            parts = line.split("|", 2)
-            if len(parts) == 3:
-                messages.append({"date": parts[0], "sender": parts[1], "text": parts[2]})
-        return messages
-    except Exception as exc:
-        log.debug("read_recent_messages error: %s", exc)
+    def recent_chats(self, limit: int = 10) -> list:
+        r = self._get("/api/v1/chat/query", limit=limit, offset=0, sort="lastmessage")
+        if r and "data" in r:
+            return r["data"] if isinstance(r["data"], list) else r["data"].get("chats", [])
         return []
 
+    def messages(self, chat_guid: str, limit: int = 20) -> list:
+        r = self._get("/api/v1/message/query", chatGuid=chat_guid, limit=limit, offset=0)
+        if r and "data" in r:
+            d = r["data"]
+            return d if isinstance(d, list) else d.get("messages", [])
+        return []
 
-# ── Command routing ───────────────────────────────────────────────────────────
+    def send(self, chat_guid: str, message: str) -> bool:
+        r = self._post("/api/v1/message/text", {"chatGuid": chat_guid, "message": message})
+        return r is not None and r.get("status") in (200, 201, "ok", True)
 
-def _system_status_text() -> str:
-    def svc(name):
+# ── SSH AppleScript Fallback ────────────────────────────────────────────────────
+
+def _ssh_run(script: str) -> str | None:
+    for host in [_cfg("MACBOOK_LOCAL_IP"), _cfg("MACBOOK_TAILSCALE_IP")]:
+        if not host:
+            continue
         try:
-            r = subprocess.run(["systemctl", "--user", "is-active", name],
-                               capture_output=True, text=True, timeout=5)
-            return r.stdout.strip()
-        except Exception:
-            return "?"
-    def port(p):
+            r = subprocess.run(
+                ["ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
+                 f"{_cfg('MACBOOK_SSH_USER', 'pierre')}@{host}",
+                 f"osascript -e '{script}'"],
+                capture_output=True, text=True, timeout=15
+            )
+            if r.returncode == 0:
+                return r.stdout.strip()
+        except Exception as e:
+            log.debug(f"SSH to {host} failed: {e}")
+    return None
+
+def ssh_send(phone: str, message: str) -> bool:
+    escaped = message.replace("'", "\\'")
+    script  = f'tell application "Messages" to send "{escaped}" to buddy "{phone}" of service "iMessage"'
+    result  = _ssh_run(script)
+    return result is not None
+
+# ── Command Processor ──────────────────────────────────────────────────────────
+
+def process_command(text: str, chat_guid: str, bb: BlueBubblesClient) -> str:
+    txt = text.strip().lower()
+    phone = _cfg("ALII_PHONE_NUMBER", "")
+
+    if txt == "status":
         try:
-            r = subprocess.run(["ss", "-lntp"], capture_output=True, text=True, timeout=5)
-            return "UP" if f":{p}" in r.stdout else "DOWN"
-        except Exception:
-            return "?"
-    try:
-        tasks   = json.loads((WORKDIR / "alfred_todo.json").read_text())
-        pending = sum(1 for t in tasks if not t.get("done"))
-    except Exception:
-        pending = -1
-    return (
-        f"Alfred:{svc('alfred.service')} "
-        f"UI:{svc('alii-ui.service')}({port(8001)}) "
-        f"Todo:{pending} pending "
-        f"Time:{datetime.now().strftime('%H:%M')}"
-    )
+            r = subprocess.run(["systemctl", "--user", "list-units", "--state=running", "--no-pager"],
+                               capture_output=True, text=True, timeout=10)
+            lines = [l for l in r.stdout.splitlines() if "alii-" in l.lower()][:8]
+            return "Services running:\n" + "\n".join(lines) if lines else "No alii services running"
+        except (OSError, subprocess.TimeoutExpired):
+            return "Status check failed"
 
-
-def _add_todo(task: str, priority: str = "normal"):
-    try:
-        tasks = json.loads(TODO_FILE.read_text()) if TODO_FILE.exists() else []
-        tasks.insert(0, {
-            "task":       task,
-            "created_at": datetime.now().isoformat(),
-            "done":       False,
-            "priority":   priority,
-            "source":     "iMessage",
-        })
-        TODO_FILE.write_text(json.dumps(tasks, indent=2))
-        return True
-    except Exception as exc:
-        log.error("_add_todo error: %s", exc)
-        return False
-
-
-def route_command(text: str, sender: str) -> str:
-    """Parse an incoming message and return a reply string."""
-    text = text.strip()
-    low  = text.lower()
-
-    if low in ("status", "s", "?"):
-        return "STATUS: " + _system_status_text()
-
-    if low.startswith("task:"):
-        task = text[5:].strip()
-        if _add_todo(task, priority="high"):
-            return f"QUEUED: '{task[:60]}' added as high priority task."
-        return "ERROR: Could not add task."
-
-    if low.startswith("run:"):
-        cmd_key = text[4:].strip().lower()
-        if cmd_key == "todo":
-            try:
-                tasks   = json.loads(TODO_FILE.read_text())
-                pending = [t["task"] for t in tasks if not t.get("done")][:5]
-                return "TODO:\n" + "\n".join(f"• {p[:60]}" for p in pending)
-            except Exception:
-                return "Could not read todo list."
-        if cmd_key in SAFE_COMMANDS and SAFE_COMMANDS[cmd_key]:
-            try:
-                r = subprocess.run(SAFE_COMMANDS[cmd_key], capture_output=True,
-                                   text=True, timeout=10)
-                return (r.stdout + r.stderr).strip()[-300:] or "(no output)"
-            except Exception as exc:
-                return f"ERROR: {exc}"
-        return f"Unknown command '{cmd_key}'. Safe commands: {', '.join(SAFE_COMMANDS)}"
-
-    if low in ("morning", "report", "briefing"):
-        return _system_status_text()
-
-    if low in ("help", "commands"):
-        return (
-            "Alii commands:\n"
-            "status — system health\n"
-            "task: <text> — queue a task\n"
-            "run: logs|watchdog|git|status|todo\n"
-            "morning — quick briefing\n"
-            "help — this list"
-        )
-
-    # Anything else → queue as task
-    if len(text) > 3:
-        _add_todo(text, priority="normal")
-        return f"GOT IT: Queued as task → '{text[:60]}'"
-
-    return "?"
-
-
-# ── Polling loop ──────────────────────────────────────────────────────────────
-
-def _load_state() -> dict:
-    if STATE_FILE.exists():
+    elif txt.startswith("run "):
+        cmd = text[4:].strip()
         try:
-            return json.loads(STATE_FILE.read_text())
-        except Exception:
-            pass
-    return {"last_seen_date": "", "processed_texts": []}
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+            out = (r.stdout + r.stderr).strip()[:500] or "(no output)"
+            return f"$ {cmd}\n{out}"
+        except Exception as e:
+            return f"Error: {e}"
 
+    elif txt == "report":
+        try:
+            status_file = Path("/home/avalii/moltbot/data/alii_status.json")
+            if status_file.exists():
+                data = json.loads(status_file.read_text())
+                return f"System report:\n{json.dumps(data, indent=2)[:500]}"
+        except (json.JSONDecodeError, OSError): pass
+        return "No report available"
 
-def _save_state(state: dict):
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    elif txt in ("money", "revenue"):
+        try:
+            rev_file = Path("/home/avalii/moltbot/data/revenue_live.json")
+            if rev_file.exists():
+                data = json.loads(rev_file.read_text())
+                return f"Revenue: {json.dumps(data, indent=2)[:400]}"
+        except (json.JSONDecodeError, OSError): pass
+        return "No revenue data available"
 
+    elif txt == "secure":
+        try:
+            r = subprocess.run(["python3", "/home/avalii/moltbot/security_agent.py", "--quick"],
+                               capture_output=True, text=True, timeout=30)
+            return r.stdout.strip()[:400] or "Security check complete"
+        except (OSError, subprocess.TimeoutExpired):
+            return "Security check failed"
 
-def poll_and_respond(reply_to: str | None = None):
-    """
-    Poll iMessages every POLL_INTERVAL seconds.
-    When a new message arrives from Pierre, route it and reply.
-    reply_to: phone number or Apple ID to reply to (defaults to MY_PHONE)
-    """
-    target = reply_to or MY_PHONE
-    state  = _load_state()
+    elif txt == "help":
+        return ("Commands: status | run <cmd> | report | money | secure | help\n"
+                "Or ask me anything!")
 
-    log.info("iMessage poll loop starting. reply_to=%s interval=%ds",
-             target[:6] + "***" if target else "(no phone set)", POLL_INTERVAL)
+    else:
+        # Ask Ollama
+        try:
+            r = requests.post("http://localhost:11434/api/generate",
+                              json={"model": "llama3.2:3b", "prompt": text, "stream": False},
+                              timeout=30)
+            if r.ok:
+                return r.json().get("response", "")[:500]
+        except (requests.RequestException, ValueError, KeyError): pass
+        return f"Got: {text}"
 
-    if not ssh_available():
-        log.warning("MacBook SSH not available. Add public key — see docstring.")
-        log.warning("Public key: cat ~/.ssh/id_rsa.pub")
-        _ntfy("iMessage bridge waiting for MacBook SSH auth. "
-              "Run 'cat ~/.ssh/id_rsa.pub' on Precision and add to MacBook authorized_keys.")
+# ── Main Poll Loop ─────────────────────────────────────────────────────────────
+
+def main():
+    log.info("iMessage agent starting (BlueBubbles primary, SSH fallback)")
+    bb    = BlueBubblesClient()
+    state = _state()
+    owner_phone = _cfg("ALII_PHONE_NUMBER", "")
+
+    if not bb.url:
+        log.warning("BLUEBUBBLES_URL not set — SSH-only mode")
+    elif bb.available():
+        log.info(f"BlueBubbles available at {bb.url}")
+    else:
+        log.warning(f"BlueBubbles not reachable at {bb.url} — SSH fallback mode")
 
     while True:
         try:
-            messages = read_recent_messages(count=5)
-            for m in messages:
-                text = m.get("text", "").strip()
-                date = m.get("date", "")
-                sender = m.get("sender", "")
+            if bb.url and bb.available():
+                chats = bb.recent_chats(limit=20)
+                for chat in chats:
+                    guid = chat.get("guid", "")
+                    participants = chat.get("participants", [])
 
-                # Skip already-processed or empty
-                if not text or text in state.get("processed_texts", []):
-                    continue
+                    # Check if this is the owner's chat
+                    is_owner_chat = False
+                    if owner_phone:
+                        for p in participants:
+                            handle = p.get("address", p.get("id", ""))
+                            if owner_phone.replace("+1", "").replace("-", "").replace(" ", "") in \
+                               handle.replace("+1", "").replace("-", "").replace(" ", ""):
+                                is_owner_chat = True
+                                break
 
-                # Skip messages sent by this system
-                if "ALII" in text.upper() or "STATUS:" in text.upper():
-                    continue
+                    # Get last message count from state
+                    last_count = state.get(guid, {}).get("last_count", 0)
+                    msgs = bb.messages(guid, limit=5)
 
-                log.info("New message from %s: %s", sender[:20], text[:60])
-                reply = route_command(text, sender)
-                log.info("Reply: %s", reply[:80])
+                    if not msgs:
+                        continue
 
-                if target:
-                    send_imessage(target, reply)
-                else:
-                    log.warning("No ALII_PHONE_NUMBER set — reply not sent: %s", reply)
+                    # Check for new messages
+                    new_msgs = [m for m in msgs
+                                if not m.get("isFromMe", True)
+                                and m.get("dateCreated", 0) > state.get(guid, {}).get("last_ts", 0)]
 
-                # Track processed
-                processed = state.get("processed_texts", [])
-                processed.append(text)
-                state["processed_texts"] = processed[-50:]   # keep last 50
-                state["last_seen_date"]  = date
-                _save_state(state)
+                    state_dirty = False
+                    for msg in new_msgs:
+                        text = msg.get("text", "").strip()
+                        ts   = msg.get("dateCreated", 0)
+                        if not text:
+                            continue
+                        log.info(f"New message from chat {guid}: {text[:60]}")
+                        response = process_command(text, guid, bb)
+                        if response:
+                            sent = bb.send(guid, response)
+                            if not sent and is_owner_chat and owner_phone:
+                                ssh_send(owner_phone, response)
+                            log.info(f"Replied: {response[:60]}")
 
-            # Retry any queued messages
-            sent = retry_pending()
-            if sent:
-                log.info("Sent %d queued messages.", sent)
+                        # Update state
+                        if guid not in state:
+                            state[guid] = {}
+                        state[guid]["last_ts"] = max(state[guid].get("last_ts", 0), ts)
+                        state_dirty = True
 
-        except Exception as exc:
-            log.debug("Poll cycle error (non-fatal): %s", exc)
+                    if state_dirty:
+                        _save_state(state)
 
-        time.sleep(POLL_INTERVAL)
+        except KeyboardInterrupt:
+            log.info("Stopping iMessage agent")
+            break
+        except Exception as e:
+            log.error(f"Poll error: {e}")
 
-
-def _ntfy(msg: str, title: str = "Alii iMessage"):
-    try:
-        subprocess.run(
-            ["curl", "-s", "-X", "POST",
-             "-H", f"Title: {title}",
-             "-d", msg,
-             "ntfy.sh/alii-precision"],
-            capture_output=True, timeout=5
-        )
-    except Exception:
-        pass
-
-
-# ── System status for morning report ─────────────────────────────────────────
-
-def system_status() -> dict:
-    def svc(name):
-        try:
-            r = subprocess.run(["systemctl", "--user", "is-active", name],
-                               capture_output=True, text=True, timeout=5)
-            return r.stdout.strip()
-        except Exception:
-            return "?"
-
-    def port_up(p):
-        try:
-            r = subprocess.run(["ss", "-lntp"], capture_output=True, text=True, timeout=5)
-            return "UP" if f":{p}" in r.stdout else "DOWN"
-        except Exception:
-            return "?"
-
-    def watchdog_last():
-        wlog = WORKDIR / "logs" / "watchdog.log"
-        try:
-            return wlog.read_text().splitlines()[-1] if wlog.exists() else "(none)"
-        except Exception:
-            return "(unreadable)"
-
-    def todo_pending():
-        try:
-            tasks = json.loads(TODO_FILE.read_text())
-            return sum(1 for t in tasks if not t.get("done"))
-        except Exception:
-            return -1
-
-    def commits_12h():
-        try:
-            r = subprocess.run(
-                ["git", "-C", str(WORKDIR), "log", "--oneline", "--since=12 hours ago"],
-                capture_output=True, text=True, timeout=5
-            )
-            lines = r.stdout.strip().splitlines()
-            return len(lines), lines[:3]
-        except Exception:
-            return 0, []
-
-    n, recent = commits_12h()
-    return {
-        "timestamp":     datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "alfred":        svc("alfred.service"),
-        "alii_ui":       svc("alii-ui.service"),
-        "port_8001":     port_up(8001),
-        "watchdog_last": watchdog_last()[-80:],
-        "todo_pending":  todo_pending(),
-        "commits_12h":   n,
-        "recent_commits":recent,
-        "ssh_available": ssh_available(),
-    }
-
-
-def morning_report(phone: str | None = None) -> str:
-    target = phone or MY_PHONE
-    s = system_status()
-    report = (
-        f"=== Alii {s['timestamp']} ===\n"
-        f"Alfred:{s['alfred']} UI:{s['alii_ui']}({s['port_8001']})\n"
-        f"Watchdog:{s['watchdog_last'][-60:]}\n"
-        f"Todo:{s['todo_pending']} pending | Commits:{s['commits_12h']}\n"
-        f"SSH bridge:{'READY' if s['ssh_available'] else 'WAITING FOR KEY'}\n"
-        + ("".join(f"  {c}\n" for c in s["recent_commits"]))
-        + "=== end ==="
-    )
-    if target:
-        send_imessage(target, report)
-    return report
-
-
-# ── Register as systemd service ───────────────────────────────────────────────
-
-def register_as_service():
-    service = """[Unit]
-Description=Alii iMessage Two-Way Bridge
-After=network.target alfred.service
-
-[Service]
-ExecStart=/usr/bin/python3 /home/avalii/moltbot/agents/imessage_agent.py --poll
-WorkingDirectory=/home/avalii/moltbot
-Restart=always
-RestartSec=15
-EnvironmentFile=-/home/avalii/moltbot/.env
-StandardOutput=append:/home/avalii/moltbot/logs/imessage_agent.log
-StandardError=append:/home/avalii/moltbot/logs/imessage_agent.log
-
-[Install]
-WantedBy=default.target
-"""
-    path = Path.home() / ".config/systemd/user/imessage-agent.service"
-    path.write_text(service)
-    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
-    subprocess.run(["systemctl", "--user", "enable", "imessage-agent.service"], check=False)
-    log.info("Service registered: %s", path)
-    return str(path)
-
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
+        time.sleep(10)
 
 if __name__ == "__main__":
-    if "--poll" in sys.argv:
-        poll_and_respond()
-    elif "--status" in sys.argv:
-        print(json.dumps(system_status(), indent=2))
-    elif "--morning" in sys.argv:
-        phone = sys.argv[sys.argv.index("--morning") + 1] if len(sys.argv) > 2 else None
-        print(morning_report(phone))
-    elif "--register" in sys.argv:
-        print(register_as_service())
-    elif "--retry" in sys.argv:
-        print(f"Sent {retry_pending()} queued messages")
-    elif len(sys.argv) >= 3 and (sys.argv[1].startswith("+") or "@" in sys.argv[1]):
-        result = send_imessage(sys.argv[1], " ".join(sys.argv[2:]))
-        print(result)
-    else:
-        print("Usage:")
-        print("  --poll              start polling loop")
-        print("  --status            print system status JSON")
-        print("  --morning [phone]   send morning report")
-        print("  --register          install systemd service")
-        print("  --retry             retry pending messages")
-        print("  +1... 'message'     send a message")
+    main()

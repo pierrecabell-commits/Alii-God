@@ -4,6 +4,7 @@ import sys
 import time
 import json
 import hashlib
+import py_compile
 import subprocess
 from pathlib import Path
 from datetime import datetime
@@ -20,21 +21,31 @@ class AliiAutonomousSystem:
 
     def load_state(self):
         if os.path.exists(self.state_file):
-            with open(self.state_file) as f:
-                self.state = json.load(f)
-        else:
-            self.state = {"last_scan": None, "files_analyzed": 0, "optimizations": 0, "deletions": 0}
+            try:
+                with open(self.state_file) as f:
+                    self.state = json.load(f)
+                return
+            except Exception:
+                pass
+        self.state = {"last_scan": None, "files_analyzed": 0, "optimizations": 0, "deletions": 0}
 
     def save_state(self):
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=2)
+        try:
+            with open(self.state_file, "w") as f:
+                json.dump(self.state, f, indent=2)
+        except Exception as e:
+            print(f"[AliiAutonomousSystem] save_state failed: {e}")
 
     def log(self, msg):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"[{timestamp}] {msg}"
         print(log_msg)
-        with open(self.log_file, "a") as f:
-            f.write(log_msg + "\n")
+        try:
+            os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
+            with open(self.log_file, "a") as f:
+                f.write(log_msg + "\n")
+        except Exception:
+            pass
 
     def scan_codebase(self):
         self.log("Starting codebase scan...")
@@ -61,7 +72,7 @@ class AliiAutonomousSystem:
                         duplicates.append((fpath, hashes[h]))
                     else:
                         hashes[h] = fpath
-            except:
+            except Exception:
                 pass
         return duplicates
 
@@ -75,12 +86,15 @@ class AliiAutonomousSystem:
                 content = f.read()
                 imports = [line for line in content.split("\n") if line.strip().startswith(("import ", "from "))]
                 return imports
-        except:
+        except Exception:
             return []
 
     def check_syntax(self, pyfile):
-        result = subprocess.run(["python3", "-m", "py_compile", pyfile], capture_output=True, text=True)
-        return result.returncode == 0
+        try:
+            py_compile.compile(pyfile, doraise=True)
+            return True
+        except py_compile.PyCompileError:
+            return False
 
     def optimize_file(self, fpath):
         if not fpath.endswith(".py"):
@@ -105,7 +119,7 @@ class AliiAutonomousSystem:
                     f.write(optimized)
                 self.log(f"Optimized: {fpath}")
                 return True
-        except:
+        except Exception:
             pass
         return False
 
@@ -121,7 +135,7 @@ class AliiAutonomousSystem:
             os.rename(fpath, archive_path)
             self.log(f"Archived: {fpath} -> {archive_path}")
             return True
-        except:
+        except Exception:
             return False
 
     def get_system_health(self):
@@ -143,14 +157,15 @@ class AliiAutonomousSystem:
                 p=self.config.get("perplexity",{})
                 r=__import__("requests").post(f"{p.get("base_url")}/chat/completions",headers={"Authorization":f"Bearer {p.get("api_key")}"},json={"model":p.get("model"),"messages":[{"role":"user","content":f"{q}. List top 3 tools."}]},timeout=30)
                 upgrades.append({"query":q,"result":r.json()["choices"][0]["message"]["content"]})
-            except:pass
+            except Exception:
+                pass
         return upgrades
 
     def run_optimization_cycle(self):
         health=self.get_system_health()
         self.log(f"System: CPU {health["cpu"]}%, RAM {health["memory"]}%, Disk {health["disk"]}%")
         issues=self.check_self_health()
-        if issues:self.log(f"Health issues: {len(issues)}","WARNING")
+        if issues:self.log(f"WARNING: Health issues: {len(issues)}")
         self.log("=" * 60)
         self.log("Starting optimization cycle")
 
@@ -181,7 +196,7 @@ class AliiAutonomousSystem:
         self.state["last_scan"] = datetime.now().isoformat()
         self.save_state()
 
-        self.log(f"Cycle complete. Optimizations: {self.state[optimizations]}, Deletions: {self.state[deletions]}")
+        self.log("Cycle complete. Optimizations: %d, Deletions: %d" % (self.state["optimizations"], self.state["deletions"]))
         self.log("=" * 60)
 
     def run(self):

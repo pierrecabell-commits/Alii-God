@@ -20,21 +20,31 @@ class AliiProtectionAgent:
 
     def load_state(self):
         if os.path.exists(self.state_file):
-            with open(self.state_file) as f:
-                self.state = json.load(f)
-        else:
-            self.state = {"last_scan": None, "files_analyzed": 0, "optimizations": 0, "deletions": 0}
+            try:
+                with open(self.state_file) as f:
+                    self.state = json.load(f)
+                return
+            except (json.JSONDecodeError, OSError):
+                pass
+        self.state = {"last_scan": None, "files_analyzed": 0, "optimizations": 0, "deletions": 0}
 
     def save_state(self):
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=2)
+        try:
+            with open(self.state_file, "w") as f:
+                json.dump(self.state, f, indent=2)
+        except OSError as e:
+            print(f"[AliiProtectionAgent] save_state failed: {e}")
 
     def log(self, msg):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"[{timestamp}] {msg}"
         print(log_msg)
-        with open(self.log_file, "a") as f:
-            f.write(log_msg + "\n")
+        try:
+            os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
+            with open(self.log_file, "a") as f:
+                f.write(log_msg + "\n")
+        except OSError:
+            pass
 
     def scan_codebase(self):
         self.log("Starting codebase scan...")
@@ -61,7 +71,7 @@ class AliiProtectionAgent:
                         duplicates.append((fpath, hashes[h]))
                     else:
                         hashes[h] = fpath
-            except:
+            except Exception:
                 pass
         return duplicates
 
@@ -75,7 +85,7 @@ class AliiProtectionAgent:
                 content = f.read()
                 imports = [line for line in content.split("\n") if line.strip().startswith(("import ", "from "))]
                 return imports
-        except:
+        except Exception:
             return []
 
     def check_syntax(self, pyfile):
@@ -105,7 +115,7 @@ class AliiProtectionAgent:
                     f.write(optimized)
                 self.log(f"Optimized: {fpath}")
                 return True
-        except:
+        except Exception:
             pass
         return False
 
@@ -121,7 +131,7 @@ class AliiProtectionAgent:
             os.rename(fpath, archive_path)
             self.log(f"Archived: {fpath} -> {archive_path}")
             return True
-        except:
+        except Exception:
             return False
 
     def scan_open_ports(self):
@@ -139,8 +149,8 @@ class AliiProtectionAgent:
             try:
                 name=proc.info["name"]
                 if any(p in name.lower()for p in patterns):suspicious.append({"pid":proc.info["pid"],"name":name})
-            except:pass
-        if suspicious:self.log(f"Found {len(suspicious)} suspicious","WARNING")
+            except Exception: pass
+        if suspicious: self.log(f"Found {len(suspicious)} suspicious processes")
         return suspicious
 
     def scan_file_permissions(self):
@@ -187,7 +197,7 @@ class AliiProtectionAgent:
         self.state["last_scan"] = datetime.now().isoformat()
         self.save_state()
 
-        self.log(f"Cycle complete. Optimizations: {self.state[optimizations]}, Deletions: {self.state[deletions]}")
+        self.log(f"Cycle complete. Optimizations: {self.state["optimizations"]}, Deletions: {self.state["deletions"]}")
         self.log("=" * 60)
 
     def run(self):

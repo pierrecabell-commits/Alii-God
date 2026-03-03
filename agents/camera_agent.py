@@ -185,7 +185,12 @@ class CameraAgent:
             procs.append((ip, proc))
 
         for ip, proc in procs:
-            if proc.wait() == 0:
+            try:
+                ret = proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                ret = proc.wait()
+            if ret == 0:
                 live.append(ip)
 
         return live

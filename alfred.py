@@ -13,12 +13,27 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import aiohttp
 from aiohttp import web
+
+# ── Todo agent import (best-effort) ────────────────────────────────────────────
+try:
+    sys.path.insert(0, "/home/avalii/moltbot")
+    from agents.todo_agent import todo as _todo_agent
+    def _add_todo(title: str, description: str = "", category: str = "action",
+                  priority: str = "medium", context: str = ""):
+        try:
+            _todo_agent.add_todo(title=title, description=description,
+                                 category=category, priority=priority,
+                                 context=context, added_by="alfred")
+        except Exception as _te:
+            log.debug("todo add failed: %s", _te)
+except Exception as _e:
+    def _add_todo(*a, **kw): pass
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 WORKDIR   = Path("/home/avalii/moltbot")
@@ -62,30 +77,101 @@ DEFAULT_SERVICES: list[ServiceSpec] = [
     ServiceSpec(
         name="distributed-brain",
         cmd=[sys.executable, "alii_distributed_brain.py"],
-        health_url="http://127.0.0.1:5000/health",
-    ),
-    ServiceSpec(
-        name="alii-ui",
-        cmd=["chainlit", "run", "alii_ui.py", "--host", "0.0.0.0", "--port", "8001"],
-        health_port=8001,
+        health_url="http://127.0.0.1:8000/health",
     ),
 ]
 
 
-# ── Task types ─────────────────────────────────────────────────────────────────
-TASK_KEYWORDS = {
-    "code":     ["code", "function", "class", "debug", "refactor", "implement", "script"],
-    "analysis": ["analyze", "explain", "why", "how", "compare", "review"],
-    "plan":     ["plan", "design", "architect", "strategy", "roadmap"],
-    "quick":    ["what", "who", "when", "simple", "quick", "fast"],
+# ── Intent classifier — routes to correct Alii subsystem ───────────────────────
+INTENT_ROUTES = {
+    # (keywords) → (subsystem, task_type)
+    "code":     (["code", "function", "class", "debug", "refactor", "implement",
+                  "script", "build", "create", "fix", "deploy", "write", "generate"],
+                 "claude-code"),
+    "memory":   (["remember", "history", "what did i say", "retrieve", "recall",
+                  "search memory", "past conversation"],
+                 "qdrant"),
+    "social":   (["post", "tweet", "publish", "instagram", "reddit", "linkedin",
+                  "revenue", "social"],
+                 "account_agent"),
+    "todo":     (["todo", "remind", "what do i need", "what's pending", "task list",
+                  "what should i", "pending items"],
+                 "todo_agent"),
+    "vault":    (["password", "credential", "api key", "secret", "login", "token",
+                  "vault"],
+                 "vault_guardian"),
+    "analysis": (["analyze", "explain", "why", "how", "compare", "review",
+                  "summarize", "what is"],
+                 "ollama"),
+    "plan":     (["plan", "design", "architect", "strategy", "roadmap"],
+                 "claude-code"),
+    "quick":    (["what", "who", "when", "simple", "quick", "fast"],
+                 "ollama"),
 }
 
-def classify_task(prompt: str) -> str:
+def classify_intent(prompt: str) -> tuple[str, str]:
+    """Return (intent_name, subsystem) for a given prompt."""
     p = prompt.lower()
-    for task_type, keywords in TASK_KEYWORDS.items():
+    for intent, (keywords, subsystem) in INTENT_ROUTES.items():
         if any(k in p for k in keywords):
-            return task_type
-    return "general"
+            return intent, subsystem
+    return "general", "claude-code"
+
+def classify_task(prompt: str) -> str:
+    """Legacy task classifier — kept for compatibility."""
+    intent, _ = classify_intent(prompt)
+    # Map to legacy task types
+    mapping = {
+        "code": "code", "plan": "plan", "analysis": "analysis",
+        "quick": "quick", "memory": "analysis", "social": "general",
+        "todo": "quick", "vault": "general",
+    }
+    return mapping.get(intent, "general")
+
+def _detect_deferred_action(response_text: str) -> list[dict]:
+    """
+    Scan an AI response for phrases indicating a deferred manual action.
+    Returns list of todo dicts to add.
+    """
+    deferred_patterns = [
+        ("you'll need to", "action", "medium"),
+        ("you should", "action", "medium"),
+        ("manually ", "action", "medium"),
+        ("don't forget to", "action", "high"),
+        ("remember to", "action", "medium"),
+        ("TODO:", "action", "medium"),
+        ("requires your", "action", "high"),
+        ("rotate", "security", "high"),
+        ("update your password", "security", "critical"),
+        ("set your api key", "config", "high"),
+        ("add to vault", "config", "high"),
+    ]
+    todos = []
+    lines = response_text.split("\n")
+    for line in lines:
+        ll = line.lower()
+        for pattern, category, priority in deferred_patterns:
+            if pattern.lower() in ll and len(line.strip()) > 10:
+                todos.append({
+                    "title": line.strip()[:80],
+                    "description": line.strip(),
+                    "category": category,
+                    "priority": priority,
+                    "context": "detected in alfred response",
+                })
+                break
+    return todos[:3]  # max 3 per response
+
+
+# ── Task error helper ──────────────────────────────────────────────────────────
+def _task_done_cb(task: asyncio.Task) -> None:
+    """Log exceptions from fire-and-forget tasks so they are never silently lost."""
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        log.exception("Background task %r raised an unhandled exception.", task.get_name())
 
 
 # ── Process guard ──────────────────────────────────────────────────────────────
@@ -99,14 +185,15 @@ class ProcessGuard:
 
     async def start(self):
         self._stop_event.clear()
-        asyncio.create_task(self._run_loop(), name=f"guard-{self.spec.name}")
+        _t = asyncio.create_task(self._run_loop(), name=f"guard-{self.spec.name}")
+        _t.add_done_callback(_task_done_cb)
 
     async def stop(self):
         self._stop_event.set()
         if self._proc and self._proc.poll() is None:
             self._proc.terminate()
             try:
-                await asyncio.get_event_loop().run_in_executor(
+                await asyncio.get_running_loop().run_in_executor(
                     None, self._proc.wait, 5
                 )
             except Exception:
@@ -149,7 +236,7 @@ class ProcessGuard:
             log.info("Service '%s' running as PID %d.", self.spec.name, self._proc.pid)
 
             # Wait for process to exit
-            await asyncio.get_event_loop().run_in_executor(None, self._proc.wait)
+            await asyncio.get_running_loop().run_in_executor(None, self._proc.wait)
 
             if self._stop_event.is_set():
                 break
@@ -189,16 +276,25 @@ async def check_health(spec: ServiceSpec, session: aiohttp.ClientSession) -> boo
 
 
 # ── Model router proxy ─────────────────────────────────────────────────────────
-async def route_to_model(prompt: str, session: aiohttp.ClientSession) -> str:
-    """Route prompt through AliiModelRouter (via Ollama), return response text."""
-    # Import lazily so Alfred boots even if router has import errors
-    try:
+_router_instance = None
+
+def _get_router():
+    """Return a cached AliiModelRouter, importing lazily to avoid boot failures."""
+    global _router_instance
+    if _router_instance is None:
         sys.path.insert(0, str(WORKDIR))
         from alii_model_router import AliiModelRouter
-        router = AliiModelRouter()
+        _router_instance = AliiModelRouter()
+    return _router_instance
+
+
+async def route_to_model(prompt: str) -> str:
+    """Route prompt through AliiModelRouter (via Ollama), return response text."""
+    try:
+        router = _get_router()
         task_type = classify_task(prompt)
         model = router.select_model(task_type)
-        response = router.generate(prompt, model)
+        response = router.generate(prompt, task_type)
         return response or "[no response]"
     except Exception as exc:
         log.exception("Model routing error: %s", exc)
@@ -206,13 +302,21 @@ async def route_to_model(prompt: str, session: aiohttp.ClientSession) -> str:
 
 
 # ── Memory integration ─────────────────────────────────────────────────────────
+_mem_singleton = None
+
+def _get_memory_singleton():
+    """Return a shared AliiSQLiteMemory instance (created once)."""
+    global _mem_singleton
+    if _mem_singleton is None:
+        sys.path.insert(0, str(WORKDIR))
+        from alii_sqlite_memory import AliiSQLiteMemory
+        _mem_singleton = AliiSQLiteMemory()
+    return _mem_singleton
+
 def record_event(category: str, content: str):
     """Persist an event to SQLite memory (non-blocking best-effort)."""
     try:
-        sys.path.insert(0, str(WORKDIR))
-        from alii_sqlite_memory import AliiSQLiteMemory
-        mem = AliiSQLiteMemory()
-        mem.add_memory(category=category, content=content)
+        _get_memory_singleton().add_memory(category=category, content=content)
     except Exception as exc:
         log.debug("Memory record failed (non-critical): %s", exc)
 
@@ -314,7 +418,7 @@ class Alfred:
     async def _handle_status(self, _request: web.Request) -> web.Response:
         payload = {
             "alfred_uptime_s": round(time.time() - self._start_time, 1),
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "services": {},
         }
         for name, spec in self.services.items():
@@ -340,14 +444,32 @@ class Alfred:
         if not prompt:
             return web.json_response({"error": "prompt required"}, status=400)
 
+        intent, subsystem = classify_intent(prompt)
         task_type = classify_task(prompt)
-        log.info("Task received (type=%s): %.80s…", task_type, prompt)
+        log.info("Task received (intent=%s→%s): %.80s…", intent, subsystem, prompt)
 
-        async with aiohttp.ClientSession() as session:
-            response = await route_to_model(prompt, session)
+        # Route todo queries directly to todo_agent
+        if intent == "todo":
+            try:
+                pending = _todo_agent.get_pending()
+                response = _todo_agent.format_ntfy_list() if pending else "No pending todos."
+            except Exception as exc:
+                response = f"[todo_agent error: {exc}]"
+        else:
+            response = await route_to_model(prompt)
 
-        record_event("alfred_task", f"[{task_type}] {prompt[:120]}")
-        return web.json_response({"task_type": task_type, "response": response})
+        # Auto-detect deferred actions in response and add to todo
+        deferred = _detect_deferred_action(response)
+        for d in deferred:
+            _add_todo(**d)
+
+        record_event("alfred_task", f"[{intent}/{subsystem}] {prompt[:120]}")
+        return web.json_response({
+            "intent": intent,
+            "subsystem": subsystem,
+            "task_type": task_type,
+            "response": response,
+        })
 
     async def _handle_control(self, request: web.Request) -> web.Response:
         name   = request.match_info["service"]
@@ -385,7 +507,7 @@ class Alfred:
         log.info("Alfred starting — control API on port %d.", self.CONTROL_PORT)
 
         # Graceful shutdown on SIGINT / SIGTERM
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, lambda: asyncio.create_task(self._shutdown()))
 
@@ -396,22 +518,28 @@ class Alfred:
         self._health_task = asyncio.create_task(self._health_loop(), name="alfred-health")
 
         # Schedule daily morning briefing at 07:00
-        asyncio.create_task(self._briefing_scheduler(), name="alfred-briefing")
+        _t = asyncio.create_task(self._briefing_scheduler(), name="alfred-briefing")
+        _t.add_done_callback(_task_done_cb)
 
         # Schedule 09:00 daily agent runs (social sync, legal + business briefings)
-        asyncio.create_task(self._daily_agent_scheduler(), name="alfred-daily-agents")
+        _t = asyncio.create_task(self._daily_agent_scheduler(), name="alfred-daily-agents")
+        _t.add_done_callback(_task_done_cb)
 
         # Start self-improvement loop (every 6 hours)
-        asyncio.create_task(self._learn_loop(), name="alfred-learn")
+        _t = asyncio.create_task(self._learn_loop(), name="alfred-learn")
+        _t.add_done_callback(_task_done_cb)
 
         # Start agent improvement loop (every 3 hours, offset by 30min)
-        asyncio.create_task(self._improve_agents_loop(), name="alfred-improve")
+        _t = asyncio.create_task(self._improve_agents_loop(), name="alfred-improve")
+        _t.add_done_callback(_task_done_cb)
 
         # Start research optimization loop (every 3 hours, offset by 45min)
-        asyncio.create_task(self._research_loop(), name="alfred-research")
+        _t = asyncio.create_task(self._research_loop(), name="alfred-research")
+        _t.add_done_callback(_task_done_cb)
 
         # Start weekly ArXiv paper fetch
-        asyncio.create_task(self._web_research_loop(), name="alfred-web-research")
+        _t = asyncio.create_task(self._web_research_loop(), name="alfred-web-research")
+        _t.add_done_callback(_task_done_cb)
 
         # Start HTTP API
         app = self._build_app()
@@ -434,7 +562,7 @@ class Alfred:
         await self.stop_all()
         self._save_state()
         record_event("alfred", "Alfred orchestrator stopped.")
-        asyncio.get_event_loop().stop()
+        asyncio.get_running_loop().stop()
 
     # ── Morning briefing ──────────────────────────────────────────────────────
 
@@ -446,7 +574,7 @@ class Alfred:
         import platform
         import shutil
 
-        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
         # Service statuses
         svc_lines = []
@@ -556,7 +684,7 @@ class Alfred:
             wait_s = (target - now).total_seconds()
             log.info("Morning briefing scheduled in %.0f seconds.", wait_s)
             await asyncio.sleep(wait_s)
-            self.morning_briefing()
+            await asyncio.get_running_loop().run_in_executor(None, self.morning_briefing)
 
     async def _daily_agent_scheduler(self):
         """Fire social sync + legal + business briefings every day at 09:00."""
@@ -568,7 +696,7 @@ class Alfred:
                 target += timedelta(days=1)
             await asyncio.sleep((target - now).total_seconds())
             log.info("09:00 daily agent run starting.")
-            await asyncio.get_event_loop().run_in_executor(None, self._run_daily_agents)
+            await asyncio.get_running_loop().run_in_executor(None, self._run_daily_agents)
 
     def _run_daily_agents(self):
         try:
@@ -595,7 +723,7 @@ class Alfred:
         """Self-improvement: reads logs every 3h, updates outcome weights in memory."""
         while True:
             await asyncio.sleep(3 * 3600)
-            await asyncio.get_event_loop().run_in_executor(None, self.learn_from_outcomes)
+            await asyncio.get_running_loop().run_in_executor(None, self.learn_from_outcomes)
 
     def learn_from_outcomes(self) -> dict:
         """
@@ -642,7 +770,7 @@ class Alfred:
             except Exception:
                 pass
         state["learned_weights"] = weights
-        state["last_learn"]      = datetime.utcnow().isoformat() + "Z"
+        state["last_learn"]      = datetime.now(timezone.utc).isoformat()
         try:
             STATE_FILE.write_text(json.dumps(state, indent=2))
         except Exception as exc:
@@ -655,7 +783,7 @@ class Alfred:
         """Run improve_agents() every 3 hours, offset 30min from learn loop."""
         await asyncio.sleep(1800)   # 30min initial offset
         while True:
-            await asyncio.get_event_loop().run_in_executor(None, self.improve_agents)
+            await asyncio.get_running_loop().run_in_executor(None, self.improve_agents)
             await asyncio.sleep(3 * 3600)
 
     def score_and_rank_agents(self) -> list[dict]:
@@ -739,8 +867,7 @@ class Alfred:
 
             try:
                 result = subprocess.run(
-                    ["env", "-u", "CLAUDECODE",
-                     "claude", "--dangerously-skip-permissions", "-p", prompt],
+                    ["alii-claude", "-p", prompt],
                     capture_output=True, text=True,
                     cwd=str(WORKDIR), timeout=300
                 )
@@ -794,14 +921,14 @@ class Alfred:
         """Run research_optimizations() every 3h, offset 1h from improve loop."""
         await asyncio.sleep(2700)  # 45min initial offset
         while True:
-            await asyncio.get_event_loop().run_in_executor(None, self.research_optimizations)
+            await asyncio.get_running_loop().run_in_executor(None, self.research_optimizations)
             await asyncio.sleep(3 * 3600)
 
     async def _web_research_loop(self):
         """Fetch ArXiv AI-agent papers weekly to keep Alfred current."""
         while True:
             await asyncio.sleep(7 * 24 * 3600)
-            await asyncio.get_event_loop().run_in_executor(None, self.web_research)
+            await asyncio.get_running_loop().run_in_executor(None, self.web_research)
 
     def research_optimizations(self):
         """

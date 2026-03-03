@@ -4,6 +4,7 @@ import sys
 import time
 import json
 import hashlib
+import py_compile
 import subprocess
 from pathlib import Path
 from datetime import datetime
@@ -20,21 +21,31 @@ class AliiOptimizer:
 
     def load_state(self):
         if os.path.exists(self.state_file):
-            with open(self.state_file) as f:
-                self.state = json.load(f)
-        else:
-            self.state = {"last_scan": None, "files_analyzed": 0, "optimizations": 0, "deletions": 0}
+            try:
+                with open(self.state_file) as f:
+                    self.state = json.load(f)
+                return
+            except Exception:
+                pass
+        self.state = {"last_scan": None, "files_analyzed": 0, "optimizations": 0, "deletions": 0}
 
     def save_state(self):
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=2)
+        try:
+            with open(self.state_file, "w") as f:
+                json.dump(self.state, f, indent=2)
+        except Exception as e:
+            print(f"[AliiOptimizer] save_state failed: {e}")
 
     def log(self, msg):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_msg = f"[{timestamp}] {msg}"
         print(log_msg)
-        with open(self.log_file, "a") as f:
-            f.write(log_msg + "\n")
+        try:
+            os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
+            with open(self.log_file, "a") as f:
+                f.write(log_msg + "\n")
+        except Exception:
+            pass
 
     def scan_codebase(self):
         self.log("Starting codebase scan...")
@@ -61,7 +72,7 @@ class AliiOptimizer:
                         duplicates.append((fpath, hashes[h]))
                     else:
                         hashes[h] = fpath
-            except:
+            except Exception:
                 pass
         return duplicates
 
@@ -75,12 +86,15 @@ class AliiOptimizer:
                 content = f.read()
                 imports = [line for line in content.split("\n") if line.strip().startswith(("import ", "from "))]
                 return imports
-        except:
+        except Exception:
             return []
 
     def check_syntax(self, pyfile):
-        result = subprocess.run(["python3", "-m", "py_compile", pyfile], capture_output=True, text=True)
-        return result.returncode == 0
+        try:
+            py_compile.compile(pyfile, doraise=True)
+            return True
+        except py_compile.PyCompileError:
+            return False
 
     def optimize_file(self, fpath):
         if not fpath.endswith(".py"):
@@ -105,7 +119,7 @@ class AliiOptimizer:
                     f.write(optimized)
                 self.log(f"Optimized: {fpath}")
                 return True
-        except:
+        except Exception:
             pass
         return False
 
@@ -121,7 +135,7 @@ class AliiOptimizer:
             os.rename(fpath, archive_path)
             self.log(f"Archived: {fpath} -> {archive_path}")
             return True
-        except:
+        except Exception:
             return False
 
     def run_optimization_cycle(self):
@@ -155,7 +169,7 @@ class AliiOptimizer:
         self.state["last_scan"] = datetime.now().isoformat()
         self.save_state()
 
-        self.log(f"Cycle complete. Optimizations: {self.state[optimizations]}, Deletions: {self.state[deletions]}")
+        self.log("Cycle complete. Optimizations: %d, Deletions: %d" % (self.state["optimizations"], self.state["deletions"]))
         self.log("=" * 60)
 
     def run(self):

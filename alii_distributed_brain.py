@@ -1,9 +1,8 @@
-from datetime import timezone
 import os
 import time
 import threading
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import psutil
 from flask import Flask, jsonify
@@ -25,6 +24,9 @@ ALII_MEMORY_ENTRIES = Gauge('alii_total_memory_entries', 'Count of sqlite memory
 NODE_RAM_USAGE_GB = Gauge('alii_ram_usage_gb', 'RAM usage in GB')
 NODE_CPU_PERCENT = Gauge('alii_cpu_percent', 'CPU usage percent')
 RAY_CONNECTED = Gauge('alii_ray_connected', '1 if connected to Ray, else 0')
+
+_ray_backoff: float = 5.0      # seconds; doubles on each failure, caps at 300
+_ray_reconnect_at: float = 0.0  # epoch time of next allowed reconnect attempt
 
 app = Flask(__name__)
 
@@ -57,18 +59,23 @@ def status():
 
 def run_flask():
     # use_reloader=False prevents double-start under systemd
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=8000, debug=False, use_reloader=False)
 
-def _try_ray_connect():
+def _try_ray_connect() -> bool:
+    global _ray_backoff, _ray_reconnect_at
     if ray is None:
         RAY_CONNECTED.set(0)
         return False
     try:
         ray.init(address='auto', ignore_reinit_error=True)
         RAY_CONNECTED.set(1)
+        _ray_backoff = 5.0  # reset backoff on success
         return True
-    except Exception:
+    except Exception as e:
         RAY_CONNECTED.set(0)
+        print(f'[Alii] Ray connect failed ({type(e).__name__}): {e}')
+        _ray_reconnect_at = time.time() + _ray_backoff
+        _ray_backoff = min(_ray_backoff * 2, 300.0)  # cap at 5 minutes
         return False
 
 def _service_status(name: str) -> str:
@@ -87,17 +94,12 @@ def optimization_loop():
     # 2 hour cycle checkpoints
     end_time = datetime.now() + timedelta(hours=2)
 
-    # best-effort DB init
-    try:
-        memory._init_db()
-    except Exception:
-        pass
-
     try:
         memory.add_memory('system_event', {'event': 'alii_brain_boot', 'ts': datetime.now(timezone.utc).isoformat()})
     except Exception:
         pass
 
+    psutil.cpu_percent(interval=None)  # prime cpu_percent baseline (first call always returns 0.0)
     ray_ok = _try_ray_connect()
 
     while True:
@@ -109,7 +111,7 @@ def optimization_loop():
                 ALII_MEMORY_ENTRIES.set(-1)
 
             NODE_RAM_USAGE_GB.set(psutil.virtual_memory().used / (1024**3))
-            NODE_CPU_PERCENT.set(psutil.cpu_percent(interval=0.1))
+            NODE_CPU_PERCENT.set(psutil.cpu_percent(interval=None))  # non-blocking; measures since last call
 
             # OpenClaw gateway check (non-fatal)
             claw = _service_status('openclaw-gateway')
@@ -118,9 +120,18 @@ def optimization_loop():
             except Exception:
                 pass
 
-            # Ray status refresh (non-fatal)
-            if ray is not None and (not ray_ok):
-                ray_ok = _try_ray_connect()
+            # Ray status refresh: reconnect if disconnected, or verify still alive
+            if ray is not None:
+                if not ray_ok:
+                    if time.time() >= _ray_reconnect_at:
+                        ray_ok = _try_ray_connect()
+                else:
+                    try:
+                        ray.cluster_resources()  # lightweight liveness check
+                    except Exception as e:
+                        RAY_CONNECTED.set(0)
+                        ray_ok = False
+                        print(f'[Alii] Ray liveness check failed: {e}')
 
             if datetime.now() >= end_time:
                 try:
@@ -141,6 +152,14 @@ def optimization_loop():
             time.sleep(5)
 
 if __name__ == '__main__':
-    start_http_server(8000)
-    threading.Thread(target=run_flask, daemon=True).start()
+    try:
+        start_http_server(8002)
+    except OSError:
+        pass
+    def _start_flask():
+        try:
+            run_flask()
+        except Exception as e:
+            print(f'[Alii] Flask thread failed: {e}')
+    threading.Thread(target=_start_flask, daemon=True).start()
     optimization_loop()
