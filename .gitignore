@@ -19,3 +19,18 @@ memory/
 
 # Encrypted credential vault — never commit
 accounts/vault.json
+
+# Sensitive keys and configs — never commit
+*.key
+wg0.conf
+cluster_credentials.json
+private.key
+public.key
+data/node2_inventory.json
+data/node3_inventory.json
+data/cluster_map.json
+vault/
+data/
+saas/
+pending_messages.json
+autonomy_logs.txt

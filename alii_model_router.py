@@ -1,4 +1,3 @@
-from datetime import timezone
 #!/usr/bin/env python3
 """
 ALII MODEL ROUTER - Intelligent speed-optimized model switching
@@ -46,14 +45,20 @@ class AliiModelRouter:
         self.perf_log = "/home/avalii/moltbot/memory/logs/model_perf.json"
         os.makedirs(os.path.dirname(self.perf_log), exist_ok=True)
         self.perf_data = self._load_perf()
+        self._last_save = 0.0
+        self._session = requests.Session()  # reuse TCP connection across calls
 
     def _load_perf(self):
         try:
             with open(self.perf_log) as f: return json.load(f)
-        except: return {}
+        except Exception: return {}
 
     def _save_perf(self):
-        with open(self.perf_log, "w") as f: json.dump(self.perf_data, f, indent=2)
+        try:
+            with open(self.perf_log, "w") as f:
+                json.dump(self.perf_data, f, indent=2)
+        except OSError:
+            pass
 
     def classify_task(self, prompt: str) -> str:
         p = prompt.lower()
@@ -86,7 +91,7 @@ class AliiModelRouter:
         d["avg_tps"] = (d["avg_tps"] * n + tps) / (n + 1)
         d["success_rate"] = min(1.0, (d["success_rate"] * n + 1.0) / (n + 1))
         d["samples"] = n + 1; d["last_used"] = time.time()
-        self._save_perf()
+        self._maybe_save_perf()
 
     def _record_failure(self, model):
         if model not in self.perf_data:
@@ -95,7 +100,14 @@ class AliiModelRouter:
             d = self.perf_data[model]; n = d["samples"]
             d["success_rate"] = max(0.1, (d["success_rate"] * n) / (n + 1))
             d["samples"] = n + 1
-        self._save_perf()
+        self._maybe_save_perf()
+
+    def _maybe_save_perf(self):
+        """Write perf log at most once per 60 s to avoid per-call disk I/O."""
+        now = time.time()
+        if now - self._last_save >= 60:
+            self._save_perf()
+            self._last_save = now
 
     def generate(self, prompt: str, task_type: str = None, system: str = None) -> str:
         if task_type is None: task_type = self.classify_task(prompt)
@@ -104,7 +116,7 @@ class AliiModelRouter:
         payload = {"model": model, "prompt": prompt, "stream": False, "options": OLLAMA_OPTIONS.copy()}
         if system: payload["system"] = system
         try:
-            resp = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=120)
+            resp = self._session.post(f"{self.base_url}/api/generate", json=payload, timeout=120)
             resp.raise_for_status()
             result = resp.json()
             tps = result.get("eval_count", 50) / max(time.time() - start, 0.1)
@@ -113,11 +125,13 @@ class AliiModelRouter:
         except Exception as e:
             self._record_failure(model)
             try:
-                resp = requests.post(f"{self.base_url}/api/generate",
+                resp = self._session.post(f"{self.base_url}/api/generate",
                     json={"model": "dolphin-phi:2.7b", "prompt": prompt, "stream": False,
                           "options": {"num_ctx": 2048, "num_thread": 10}}, timeout=60)
+                resp.raise_for_status()
                 return resp.json().get("response", f"Error: {e}")
-            except: return f"[ERROR] {e}"
+            except Exception:
+                return f"[ERROR] {e}"
 
     def get_fastest_model(self) -> str:
         return self.select_model("quick_reply", prefer_speed=True)
@@ -128,7 +142,7 @@ class AliiModelRouter:
         for model in MODELS:
             start = time.time()
             try:
-                r = requests.post(f"{self.base_url}/api/generate",
+                r = self._session.post(f"{self.base_url}/api/generate",
                     json={"model": model, "prompt": test, "stream": False,
                           "options": {"num_ctx": 512, "num_thread": 10}}, timeout=30)
                 elapsed = time.time() - start
