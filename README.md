@@ -1,163 +1,113 @@
-# Alii — Autonomous Local AI System
+# Alii-God
 
-Alii is a self-healing, multi-model AI assistant and autonomous agent platform designed to run entirely on local hardware. It combines intelligent model routing, persistent memory, a web UI, and a master orchestrator (Alfred) into a cohesive system that operates continuously without cloud dependencies.
+> The autonomous Python brain of the Alii system.
 
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────┐
-│                     Alfred (Port 7000)                    │
-│              Master Orchestration System                  │
-│   Process lifecycle · Health checks · Task dispatch       │
-└──────────┬────────────────────────┬─────────────────────┘
-           │                        │
-    ┌──────▼──────┐         ┌───────▼───────┐
-    │  Alii UI    │         │  Distributed  │
-    │ (Chainlit)  │         │  Brain        │
-    │  Port 8001  │         │  Port 5000    │
-    └──────┬──────┘         └───────┬───────┘
-           │                        │
-    ┌──────▼────────────────────────▼───────┐
-    │           Model Router                 │
-    │   Task classification → Ollama LLM    │
-    └──────────────────┬────────────────────┘
-                       │
-    ┌──────────────────▼────────────────────┐
-    │          Ollama (local LLMs)           │
-    │  dolphin-phi · qwen2.5 · neural-chat  │
-    └───────────────────────────────────────┘
-                       │
-    ┌──────────────────▼────────────────────┐
-    │        SQLite Memory Store             │
-    │   memories · system_state · upgrades  │
-    └───────────────────────────────────────┘
-```
-
-## Features
-
-- **Alfred Orchestrator** — Master control plane that starts, monitors, and auto-restarts all subsystems. HTTP API on port 7000 (`/health`, `/status`, `/task`, `/control/{service}`).
-- **Intelligent Model Router** — Classifies every task (code, analysis, planning, quick reply) and selects the optimal local LLM based on performance history.
-- **Multi-Model Support** — Runs multiple Ollama models simultaneously: dolphin-phi (fastest), qwen2.5, qwen2.5-coder, neural-chat, dolphin-llama3, wizard-vicuna-uncensored.
-- **Chainlit Web UI** — Real-time streaming chat interface with performance metrics (tokens/sec).
-- **Distributed Brain** — Long-running daemon with health/status endpoints, Prometheus metrics, and 2-hour optimization checkpoints.
-- **SQLite Memory** — Persistent, WAL-optimised memory store for conversations, system events, and capability upgrades.
-- **Watchdog** — Cron-driven self-healing script that detects port failures and invokes Claude Code for autonomous repair.
-- **Systemd Integration** — All components run as user systemd services with automatic restart.
+Alii-God is the intelligence layer. It houses the full stack of autonomous Python agents that drive Alii's decision-making, memory, revenue generation, cluster orchestration, and self-optimization. While Alii-Core handles communication channels, Alii-God handles *thought*.
 
 ---
 
-## Quickstart
+## What It Does
 
-### Prerequisites
+Alii-God runs a persistent ensemble of specialized agents across a distributed multi-machine cluster. Each agent owns a domain: one manages accounts and credentials, another scans for revenue opportunities, another monitors security, another bridges iMessage, another optimizes cluster resources. They share memory, coordinate through a unified router, and operate autonomously with minimal human input.
 
-- Ubuntu/Debian Linux
-- Python 3.11+
-- [Ollama](https://ollama.ai) installed and running
-- At least one Ollama model pulled (e.g. `ollama pull dolphin-phi`)
+---
 
-### Install
+## Agent Roster
+
+| Agent | File | Role |
+|---|---|---|
+| **AlfredAgent** | `alfred.py` | Primary orchestrator and task dispatcher |
+| **AliiCore** | `alii_core.py` | Unified system entry point and lifecycle manager |
+| **AccountAgent** | `agents/account_agent.py` | Secure account and credential management |
+| **AccountsAgent** | `agents/accounts_agent.py` | Multi-account registry with Fernet vault |
+| **TodoAgent** | `agents/todo_agent.py` | Persistent task queue and priority scheduling |
+| **iMessageBridge** | `agents/imessage_bridge.py` | macOS iMessage read/write bridge |
+| **SecurityAgent** | `security_agent.py` | System hardening, intrusion detection, access control |
+| **RevenueAgent** | `revenue_agent.py` | Autonomous revenue strategy execution |
+| **InventoryAgent** | `inventory_agent.py` | Cluster hardware and software inventory |
+| **MemoryBridge** | `memory_bridge.py` | Cross-agent memory sync and retrieval |
+| **ModelRouter** | `alii_model_router.py` | LLM routing across local and cloud models |
+| **ClusterScan** | `cluster_scan.py` | Multi-node health monitoring and diagnostics |
+| **Autoscale** | `autoscale.py` | Dynamic resource allocation across the cluster |
+
+---
+
+## Stack
+
+- **Runtime**: Python 3.13
+- **LLM Serving**: Ollama (local), vLLM, LiteLLM router
+- **Memory**: SQLite + Qdrant vector store
+- **Storage**: MinIO object store
+- **Cluster**: Ray distributed computing
+- **Workflows**: n8n automation
+- **Networking**: Tailscale mesh VPN
+- **Containers**: Docker + Kubernetes (microk8s)
+- **Monitoring**: Grafana + custom dashboards
+
+---
+
+## Cluster Nodes
+
+```
+Node          Role                    OS
+----          ----                    --
+Precision     Primary (GPU + storage)  Ubuntu Linux
+XPS           Secondary compute        Ubuntu Linux
+NUC           Tertiary / gateway       Ubuntu Linux
+MacBook       Dev + iMessage bridge    macOS
+```
+
+---
+
+## Memory Architecture
+
+Alii-God uses a three-layer memory system:
+
+- **Episodic** - timestamped event logs, interaction history
+- **Semantic** - Qdrant vector embeddings for concept retrieval
+- **Working** - in-flight task state and short-term context
+
+All layers sync across cluster nodes via `memory_bridge.py`.
+
+---
+
+## Getting Started
 
 ```bash
-git clone https://github.com/your-username/alii.git
-cd alii
-pip install --user aiohttp chainlit psutil prometheus-client flask
-```
+# Clone and enter
+git clone git@github.com:pierrecabell-commits/Alii-God.git
+cd Alii-God
 
-### Pull recommended models
+# Install dependencies
+pip install -r requirements.txt
 
-```bash
-ollama pull dolphin-phi
-ollama pull qwen2.5
-ollama pull qwen2.5-coder
-ollama pull neural-chat
-```
+# Configure environment
+cp .env.example .env
 
-### Start Alfred (manages everything)
-
-```bash
-# Via systemd (recommended)
-systemctl --user enable alfred.service
-systemctl --user start alfred.service
-
-# Or directly
-python3 alfred.py
-```
-
-### Check status
-
-```bash
-curl http://localhost:7000/health
-curl http://localhost:7000/status
-```
-
-### Open the UI
-
-Navigate to `http://localhost:8001` in your browser.
-
----
-
-## Directory Structure
-
-```
-moltbot/
-├── alfred.py                  # Master orchestrator
-├── alii_ui.py                 # Chainlit web interface
-├── alii_model_router.py       # Intelligent model selection
-├── alii_distributed_brain.py  # System daemon + metrics
-├── alii_sqlite_memory.py      # SQLite memory layer
-├── alii_self_modification.py  # Capability self-upgrade system
-├── moltbot.py                 # Core interactive CLI agent
-├── persistence_module.py      # Multi-format state management
-├── watchdog.sh                # Port-monitoring self-healer
-├── agents/                    # Specialised agent modules
-├── memory/                    # SQLite DB and state files
-├── logs/                      # Runtime logs (gitignored)
-└── .config/systemd/user/      # Systemd service units
-    ├── alfred.service
-    ├── alii-ui.service
-    ├── alii-brain.service
-    └── alii-watchdog.service
+# Launch Alii
+./alii_launcher.sh
 ```
 
 ---
 
-## API Reference
+## Security Model
 
-### Alfred Control API (port 7000)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Overall system health |
-| GET | `/status` | Per-service status and uptime |
-| GET | `/services` | List of managed services |
-| POST | `/task` | Submit a task `{"prompt": "..."}` |
-| POST | `/control/{service}` | Control a service `{"action": "start\|stop\|restart\|status"}` |
+All sensitive data is gitignored by design:
+- API keys and tokens live in `.env` only
+- Credentials stored in encrypted Fernet vault (`accounts/vault.json`)
+- Private keys, WireGuard configs, and cluster credentials never committed
+- Pre-commit hooks scan for accidental secret exposure
 
 ---
 
-## Roadmap
+## Part of the Alii System
 
-- [ ] Agent framework with specialised agents (media, money, research)
-- [ ] Distributed inference across multiple machines via Ray
-- [ ] Long-term episodic memory with vector search
-- [ ] Voice interface integration
-- [ ] Automated capability discovery and self-upgrade pipeline
-- [ ] Dashboard UI for Alfred orchestration metrics
+| Repo | Role |
+|---|---|
+| **Alii-God** *(this repo)* | Python autonomous agent brain + cluster |
+| **Alii-Core** | TypeScript gateway + multi-channel messaging |
+| **Alii-Public** | Public agent store *(coming soon)* |
 
 ---
 
-## License
-
-MIT
-
-## Crypto Donations
-
-**ETH / USDC / MATIC:** `0x1C9Bf65eA4ec76EFC6E12Ab56B3594376324E3d2`
-
-Send USDC on Polygon network for near-zero gas fees (~$0.01).
-
-[View wallet on Etherscan](https://etherscan.io/address/0x1C9Bf65eA4ec76EFC6E12Ab56B3594376324E3d2)
-
-*Also accepting: ETH (mainnet), USDC (Polygon/Ethereum), MATIC*
+*Built by Pierre Cabell. Alii is a self-evolving autonomous AI system designed to think, earn, and grow without outside permission.*
