@@ -25,34 +25,60 @@ model_list:
       model: ollama/dolphin-phi:2.7b
       api_base: http://localhost:11434
 
-  # Default model alias - routes to primary local model
+  # Speed-optimized alias: fast → dolphin-phi:2.7b
+  - model_name: fast
+    litellm_params:
+      model: ollama/dolphin-phi:2.7b
+      api_base: http://localhost:11434
+
+  # Smart reasoning alias: smart → qwen2.5:7b
+  - model_name: smart
+    litellm_params:
+      model: ollama/qwen2.5:7b
+      api_base: http://localhost:11434
+
+  # Code alias: code → qwen2.5-coder:7b
+  - model_name: code
+    litellm_params:
+      model: ollama/qwen2.5-coder:7b
+      api_base: http://localhost:11434
+
+  # Default model alias
   - model_name: default
     litellm_params:
       model: ollama/dolphin-llama3:8b
       api_base: http://localhost:11434
 
-  # Cloud fallback - uses env var only, only active when ANTHROPIC_API_KEY is set
+  # Cloud fallback — only active when ANTHROPIC_API_KEY is set
   - model_name: claude-sonnet
     litellm_params:
       model: anthropic/claude-sonnet-4-6
       api_key: os.environ/ANTHROPIC_API_KEY
 
-  # Perplexity search - uses env var only
+  # Perplexity search
   - model_name: perplexity
     litellm_params:
       model: perplexity/sonar-pro
       api_key: os.environ/PERPLEXITY_API_KEY
 
 router_settings:
-  routing_strategy: simple-shuffle
-  num_retries: 2
-  timeout: 60
+  routing_strategy: least-busy
+  num_retries: 3
+  timeout: 90
+  fallbacks:
+    - fast: [dolphin-llama3, default]
+    - smart: [dolphin-llama3, default]
+    - code: [dolphin-llama3, default]
+    - default: [fast, dolphin-phi]
 
 litellm_settings:
   drop_params: true
   set_verbose: false
   success_callback: []
   failure_callback: []
+
+cache:
+  type: local
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

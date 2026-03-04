@@ -63,6 +63,7 @@ class ServiceSpec:
     cwd: str = str(WORKDIR)
     health_url: Optional[str] = None   # HTTP URL to GET for liveness check
     health_port: Optional[int] = None  # TCP port to probe (fallback)
+    startup_grace_s: float = 20.0
     restart_delay: float = 5.0
     max_restarts: int = 10
     # runtime state
@@ -78,6 +79,27 @@ DEFAULT_SERVICES: list[ServiceSpec] = [
         name="distributed-brain",
         cmd=[sys.executable, "alii_distributed_brain.py"],
         health_url="http://127.0.0.1:8000/health",
+    ),
+    ServiceSpec(
+        name="imessage-bridge",
+        cmd=[sys.executable, "agents/imessage_bridge.py"],
+        health_url="http://127.0.0.1:7010/health",
+        health_port=7010,
+        startup_grace_s=15.0,
+    ),
+    ServiceSpec(
+        name="litellm-proxy",
+        cmd=["litellm", "--config", "litellm_config.yaml", "--port", "4000"],
+        health_url="http://127.0.0.1:4000/health",
+        health_port=4000,
+        startup_grace_s=30.0,
+    ),
+    ServiceSpec(
+        name="n8n",
+        cmd=["n8n", "start"],
+        health_url="http://127.0.0.1:5678/healthz",
+        health_port=5678,
+        startup_grace_s=30.0,
     ),
 ]
 
@@ -377,11 +399,17 @@ class Alfred:
 
     async def _health_loop(self, interval: float = 30.0):
         log.info("Health loop started (interval=%.0fs).", interval)
+        await asyncio.sleep(interval)
         async with aiohttp.ClientSession() as session:
             self._session = session
             while True:
                 for name, spec in self.services.items():
                     if spec.status != "running":
+                        continue
+                    elapsed = time.time() - (spec.started_at or 0.0)
+                    if elapsed < spec.startup_grace_s:
+                        log.debug("Service %s in grace period %.1fs/%.1fs skipping",
+                                  name, elapsed, spec.startup_grace_s)
                         continue
                     healthy = await check_health(spec, session)
                     if not healthy:
@@ -401,6 +429,7 @@ class Alfred:
         app.router.add_post("/task",               self._handle_task)
         app.router.add_post("/control/{service}",  self._handle_control)
         app.router.add_get("/services",            self._handle_services)
+        app.router.add_post("/heal",               self._handle_heal)
         return app
 
     async def _handle_health(self, _request: web.Request) -> web.Response:
@@ -426,7 +455,7 @@ class Alfred:
                 "status":     spec.status,
                 "pid":        spec.pid,
                 "restarts":   spec.restarts,
-                "started_at": datetime.utcfromtimestamp(spec.started_at).isoformat() + "Z"
+                "started_at": datetime.fromtimestamp(spec.started_at, timezone.utc).isoformat()
                               if spec.started_at else None,
             }
         return web.json_response(payload)
@@ -501,6 +530,26 @@ class Alfred:
             "pid":     spec.pid,
         })
 
+    async def _handle_heal(self, _request: web.Request) -> web.Response:
+        healed: list[str] = []
+        healthy: list[str] = []
+        async with aiohttp.ClientSession() as session:
+            for name, spec in self.services.items():
+                if spec.status != "running":
+                    continue
+                ok = await check_health(spec, session)
+                if ok:
+                    healthy.append(name)
+                else:
+                    await self.restart_service(name)
+                    record_event("alfred_heal", f"Healed service: {name}")
+                    healed.append(name)
+        return web.json_response({
+            "healed":    healed,
+            "healthy":   healthy,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
     # ── Main run ──────────────────────────────────────────────────────────────
 
     async def run(self):
@@ -547,7 +596,7 @@ class Alfred:
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", self.CONTROL_PORT)
         await site.start()
-        log.info("Alfred is LIVE. Endpoints: /health /status /services /task /control/{service}")
+        log.info("Alfred is LIVE. Endpoints: /health /status /services /task /control/{service} /heal")
         record_event("alfred", "Alfred orchestrator started.")
 
         # Persist state periodically
@@ -884,7 +933,7 @@ class Alfred:
                     summary = "SYNTAX ERROR — improvement reverted"
 
                 entry = (
-                    f"\n[{datetime.utcnow().isoformat()}Z] {name} "
+                    f"\n[{datetime.now(timezone.utc).isoformat()}] {name} "
                     f"(score={score}) syntax={'OK' if syntax_ok else 'FAIL'}\n"
                     f"{summary}\n"
                     f"{'='*60}"
@@ -998,7 +1047,7 @@ class Alfred:
             syntax_ok = val.returncode == 0
 
             entry = (
-                f"\n[{datetime.utcnow().isoformat()}Z] RESEARCH: {name} "
+                f"\n[{datetime.now(timezone.utc).isoformat()}] RESEARCH: {name} "
                 f"(score={score}) syntax={'OK' if syntax_ok else 'FAIL'}\n"
                 f"{summary}\n{'='*60}\n"
             )
@@ -1083,7 +1132,7 @@ class Alfred:
 
     def _save_state(self):
         state = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "uptime_s":  round(time.time() - self._start_time, 1),
             "services":  {
                 name: {
