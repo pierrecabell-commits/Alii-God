@@ -1,6 +1,6 @@
 # Alii Changelog
 
-## [2026-03-02] — 2026-03-02
+## [2026-03-04] — 2026-03-04
 
 ### Features
 - `99307f5` feat: AccountsAgent (Fernet vault) + CryptoAgent (local ETH wallet) _Alii (2026-02-27)_
@@ -11,6 +11,7 @@
 - `53dafec` feat: add Alfred orchestrator, agents framework, and repo scaffolding _Alii (2026-02-27)_
 
 ### Chores
+- `edaa8b7` chore: snapshot personal Alii _Alii (2026-03-03)_
 - `95ba959` chore: clean git tree of ignored files _Alii (2026-02-26)_
 - `6c11fa1` chore: add .gitignore to prevent committing logs and secrets _Alii (2026-02-26)_
 

@@ -21,7 +21,7 @@ def send_to_alfred(prompt):
     data = json.dumps({"prompt": prompt}).encode()
     req = urllib.request.Request(f"{ALFRED}/task", data=data, headers={"Content-Type":"application/json"})
     try:
-        r = urllib.request.urlopen(req, timeout=90)
+        r = urllib.request.urlopen(req, timeout=10)
         resp = json.loads(r.read())
         return resp.get("response") or resp.get("result") or str(resp)
     except Exception as e: return f"[Alfred error: {e}]"

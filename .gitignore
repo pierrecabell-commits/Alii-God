@@ -34,3 +34,6 @@ data/
 saas/
 pending_messages.json
 autonomy_logs.txt
+archive/
+snapshots/
+*.sqlite
