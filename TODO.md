@@ -7,10 +7,10 @@
 ## CRITICAL -- Must Fix Immediately
 
 ### 1. Security: Remove All Hardcoded Paths
-- [ ] Replace every instance of `/home/avalii/moltbot` with environment-based config
-- [ ] Affected files: `alii_core.py`, `alfred.py`, `memory_bridge.py`, `cluster_scan.py`, `security_agent.py`, `inventory_agent.py`, `revenue_agent.py`, `accounts_agent.py`, `agents/imessage_bridge.py`, `autoscale.py`
-- [ ] Create a central `config.py` that resolves `ALII_WORKDIR` from environment or `Path(__file__).parent`
-- [ ] Update all imports to use the central config
+- [x] Replace every instance of `/home/avalii/moltbot` with environment-based config
+- [x] Affected files: `alii_core.py`, `alfred.py`, `memory_bridge.py`, `cluster_scan.py`, `security_agent.py`, `inventory_agent.py`, `revenue_agent.py`, `accounts_agent.py`, `agents/imessage_bridge.py`, `autoscale.py`
+- [x] Create a central `config.py` that resolves `ALII_WORKDIR` from environment or `Path(__file__).parent`
+- [x] Update all imports to use the central config
 
 ### 2. Security: Audit Git History for Leaked Secrets
 - [ ] Scan full git history for API keys, tokens, and passwords
@@ -31,22 +31,22 @@
 - [ ] Fix SSH `StrictHostKeyChecking` bypass in `alii_core.py`
 
 ### 5. Create Dependency Management
-- [ ] Create `pyproject.toml` with all pinned dependencies
-- [ ] Generate `requirements.txt` for pip compatibility
-- [ ] Separate production vs development dependencies
-- [ ] Add Python version constraint (`>=3.10`)
+- [x] Create `pyproject.toml` with all pinned dependencies
+- [x] Generate `requirements.txt` for pip compatibility
+- [x] Separate production vs development dependencies
+- [x] Add Python version constraint (`>=3.10`)
 - [ ] Pin critical security dependencies (cryptography, paramiko, requests)
 
 ### 6. Add Test Suite
-- [ ] Create `tests/` directory structure
+- [x] Create `tests/` directory structure
 - [ ] Write unit tests for `alii_sqlite_memory.py` (memory CRUD)
 - [ ] Write unit tests for `accounts_agent.py` (vault encrypt/decrypt)
-- [ ] Write unit tests for `security_agent.py` (secret scanning)
-- [ ] Write unit tests for `alii_model_router.py` (model selection)
-- [ ] Write unit tests for `memory_bridge.py` (memory sync)
+- [x] Write unit tests for `security_agent.py` (secret scanning)
+- [x] Write unit tests for `alii_model_router.py` (model selection)
+- [x] Write unit tests for `memory_bridge.py` (memory sync)
 - [ ] Write integration tests for `alfred.py` (service orchestration)
-- [ ] Add `pytest.ini` or `pyproject.toml` test config
-- [ ] Set up coverage reporting with `pytest-cov`
+- [x] Add `pytest.ini` or `pyproject.toml` test config
+- [x] Set up coverage reporting with `pytest-cov`
 - [ ] Target: minimum 70% code coverage
 
 ---
@@ -108,10 +108,10 @@
 ## MEDIUM PRIORITY -- Quality and Reliability
 
 ### 14. Centralize Configuration
-- [ ] Create `config.py` with all configurable parameters
-- [ ] Support environment variable overrides for everything
-- [ ] Move hardcoded port numbers from source code to config
-- [ ] Move hardcoded URLs (Ollama, LiteLLM, etc.) to config
+- [x] Create `config.py` with all configurable parameters
+- [x] Support environment variable overrides for everything
+- [x] Move hardcoded port numbers from source code to config
+- [x] Move hardcoded URLs (Ollama, LiteLLM, etc.) to config
 - [ ] Support config file reloading without restart
 
 ### 15. Add Type Hints Throughout

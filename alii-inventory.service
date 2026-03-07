@@ -1,0 +1,11 @@
+[Unit]
+Description=Alii Inventory Agent - System State Scanner
+After=network.target docker.service
+
+[Service]
+Type=oneshot
+User=avalii
+WorkingDirectory=/home/avalii/moltbot
+ExecStart=/usr/bin/python3 /home/avalii/moltbot/inventory_agent.py
+StandardOutput=append:/home/avalii/moltbot/logs/inventory_agent.log
+StandardError=append:/home/avalii/moltbot/logs/inventory_agent.log
