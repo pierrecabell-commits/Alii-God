@@ -6,12 +6,13 @@ Builds business plans, financial models, funding strategies, and campaign materi
 
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 
 log = logging.getLogger("alii.business_agent")
 
-WORKDIR  = Path("/home/avalii/moltbot")
+WORKDIR  = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)))
 BIZ_DIR  = WORKDIR / "docs" / "business"
 LOG_DIR  = WORKDIR / "logs"
 

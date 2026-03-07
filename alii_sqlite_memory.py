@@ -13,7 +13,10 @@ def optimize_sqlite_conn(conn):
     return conn
 
 class AliiSQLiteMemory:
-    def __init__(self, db_path="/home/avalii/moltbot/memory/alii_core.db"):
+    def __init__(self, db_path=None):
+        if db_path is None:
+            from config import DB_PATH
+            db_path = str(DB_PATH)
         self.db_path = db_path
         self._conn = None
         self._lock = threading.Lock()
@@ -31,7 +34,7 @@ class AliiSQLiteMemory:
         try:
             if self._conn is not None:
                 self._conn.close()
-        except Exception:
+        except sqlite3.Error:
             pass
         self._conn = None
 

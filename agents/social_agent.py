@@ -11,6 +11,7 @@ CRITICAL PRIVACY RULES (HARDCODED):
 
 import json
 import logging
+import os
 import re
 import subprocess
 from datetime import datetime, timedelta
@@ -18,7 +19,7 @@ from pathlib import Path
 
 log = logging.getLogger("alii.social_agent")
 
-WORKDIR    = Path("/home/avalii/moltbot")
+WORKDIR    = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)))
 SOCIAL_DIR = WORKDIR / "docs" / "social"
 LOG_DIR    = WORKDIR / "logs"
 LOG_FILE   = LOG_DIR / "social_agent.log"

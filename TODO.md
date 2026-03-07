@@ -26,9 +26,10 @@
 - [ ] Add permission checks on `vault.json` (must be `0o600`)
 
 ### 4. Security: Fix SSH Host Key Verification
-- [ ] Remove `paramiko.AutoAddPolicy()` from `cluster_scan.py`
-- [ ] Load known hosts from `~/.ssh/known_hosts` instead
-- [ ] Fix SSH `StrictHostKeyChecking` bypass in `alii_core.py`
+- [x] Remove `paramiko.AutoAddPolicy()` from `cluster_scan.py`
+- [x] Load known hosts from `~/.ssh/known_hosts` instead
+- [x] Fix SSH `StrictHostKeyChecking` bypass in `alii_core.py`
+- [x] Fix SSH `StrictHostKeyChecking` bypass in `agents/imessage_agent.py`
 
 ### 5. Create Dependency Management
 - [x] Create `pyproject.toml` with all pinned dependencies
@@ -98,9 +99,9 @@
 - [ ] Add request size limits to all HTTP endpoints
 
 ### 13. Fix accounts_agent.py Bugs
-- [ ] Fix `chmod` ordering bug -- `chmod` before `rename` in `_atomic_write_json()`
+- [x] Fix `chmod` ordering bug -- `chmod` before `rename` in `_atomic_write_json()`
 - [ ] Add rate limiting for platform API calls
-- [ ] Fix `.tmp` file permissions (created with default umask)
+- [x] Fix `.tmp` file permissions (created with default umask -- now uses `os.open()` with mode)
 - [ ] Add content validation for vault entries
 
 ---
@@ -136,19 +137,19 @@
 - [ ] Run `vulture` to identify all dead code
 
 ### 18. Add CI/CD Pipeline
-- [ ] Create GitHub Actions workflow for:
-  - [ ] Linting (`ruff` or `flake8`)
-  - [ ] Type checking (`mypy`)
-  - [ ] Unit tests (`pytest`)
-  - [ ] Coverage reporting
-  - [ ] Secret scanning (`detect-secrets`)
+- [x] Create GitHub Actions workflow for:
+  - [x] Linting (`ruff`)
+  - [x] Type checking (`mypy`)
+  - [x] Unit tests (`pytest`)
+  - [x] Coverage reporting
+  - [x] Secret scanning (`detect-secrets`)
 - [ ] Add pre-commit hooks config (`.pre-commit-config.yaml`)
 - [ ] Add branch protection rules
 
 ### 19. Dockerize
-- [ ] Create `Dockerfile` for the Alii-God system
-- [ ] Create `docker-compose.yml` for local development (with Ollama, Qdrant, MinIO, n8n)
-- [ ] Add health check endpoints compatible with Docker/Kubernetes
+- [x] Create `Dockerfile` for the Alii-God system
+- [x] Create `docker-compose.yml` for local development (with Ollama, Qdrant, MinIO)
+- [x] Add health check endpoints compatible with Docker/Kubernetes
 - [ ] Create Kubernetes manifests for production deployment
 
 ### 20. Documentation
@@ -177,7 +178,7 @@
 - [ ] Add distributed tracing with OpenTelemetry
 
 ### 23. Developer Experience
-- [ ] Create `Makefile` with common commands (install, test, lint, run, docker)
+- [x] Create `Makefile` with common commands (install, test, lint, run, docker)
 - [ ] Add VS Code workspace config (`.vscode/settings.json`)
 - [ ] Add development environment setup script
 - [ ] Create example `.env.example` with all required variables documented
