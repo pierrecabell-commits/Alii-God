@@ -1,66 +1,163 @@
-# Alii-God
+<p align="center">
+  <strong>A L I I - G O D</strong>
+</p>
 
-> The autonomous Python brain of the Alii system.
+<p align="center">
+  <em>The autonomous brain that thinks, learns, earns, and never sleeps.</em>
+</p>
 
-Alii-God is the intelligence layer. It houses the full stack of autonomous Python agents that drive decision-making, memory management, revenue generation, cluster orchestration, and self-optimization. While [Alii-Core](https://github.com/pierrecabell-commits/Alii-Core) handles communication channels, Alii-God handles *thought*.
+<p align="center">
+  Built by <strong>Pierre Cabell</strong> &mdash; All Rights Reserved
+</p>
 
 ---
 
-## What It Does
+Alii-God isn't another chatbot wrapper. It isn't a weekend project. It isn't a thin layer on top of someone else's API.
 
-Alii-God runs a persistent ensemble of specialized agents across a distributed multi-machine cluster. Each agent owns a domain: one manages accounts and credentials, another scans for revenue opportunities, another monitors security, another bridges iMessage, another optimizes cluster resources. They share memory, coordinate through a unified router, and operate autonomously with minimal human input.
+**Alii-God is a fully autonomous AI operating system** — built from scratch, running on real hardware, powered by local models, secured with military-grade encryption, and designed to think, act, and grow on its own. No cloud bills. No third-party dependencies. No permission required.
+
+While [Alii-Core](https://github.com/pierrecabell-commits/Alii-Core) handles communication with the outside world, Alii-God handles **everything else** — the thinking, the memory, the security, the revenue, the scaling, and the self-improvement.
+
+This is an AI system that operates like a founder, not a feature.
+
+---
+
+## The Vision
+
+Most people build tools. Pierre built a **mind**.
+
+Alii-God runs a persistent ensemble of **19+ specialized agents** across a distributed multi-node cluster. Each agent owns a domain. They share memory. They coordinate through a master orchestrator. They monitor their own health. They improve their own code. They operate 24/7 with zero human intervention.
+
+Every 3 hours, Alii scores its own agents by error rate, identifies the weakest performers, and **rewrites them**. 8 optimization passes per day. Every day. Automatically.
+
+This system was designed to wake up smarter than it went to sleep.
+
+---
+
+## What It Actually Does
+
+**Thinks** — Routes every prompt to the optimal local model based on task type, context window size, and measured performance. Tracks tokens/sec and success rate per model. Learns and adapts routing over time.
+
+**Remembers** — Three-layer distributed memory system: episodic (SQLite with WAL mode, 64MB cache, 30GB memory-mapped I/O), semantic (Qdrant with 768-dimensional vector embeddings, 600+ indexed memories), and working (in-memory, zero-latency). All layers sync across every node in the cluster.
+
+**Secures** — Fernet-encrypted credential vault with atomic writes. Continuous secret scanning with regex patterns for API keys, GitHub tokens, AWS credentials, and private keys. Permission auditing. Intrusion detection. Zero plaintext passwords anywhere in the system. Pre-commit hooks block accidental secret exposure before it ever touches git.
+
+**Earns** — Autonomous GitHub presence management. Reddit posting strategy across r/selfhosted and r/LocalLLaMA. Consulting pipeline tracking. Star monitoring. Revenue strategy execution without human input.
+
+**Scales** — Ray distributed computing across the cluster. Prometheus metrics. Auto-restart with exponential backoff. Dynamic resource allocation. Graceful degradation when nodes go down.
+
+**Communicates** — Real-time two-way iMessage bridge with action tag execution (`[SHELL: cmd]`, `[NOTIFY: text]`, `[OPEN: app]`). ntfy.sh command bridge for async control from any device, anywhere.
+
+**Evolves** — Self-improvement cycles every 3 hours. Agent scoring by error rate. Automatic code rewriting of underperforming agents. 8 optimization passes per day. The system literally makes itself better while you sleep.
 
 ---
 
 ## Architecture
 
 ```
-                        +-----------------------+
-                        |      Alfred           |
-                        |  (Master Orchestrator)|
-                        +----------+------------+
-                                   |
-              +--------------------+--------------------+
-              |                    |                    |
-     +--------v--------+  +-------v--------+  +-------v--------+
-     |  AliiCore        |  |  ModelRouter    |  |  MemoryBridge  |
-     |  (Entry Point)   |  |  (LLM Routing)  |  |  (Memory Sync) |
-     +---------+--------+  +-------+--------+  +-------+--------+
-               |                    |                    |
-    +----------+----------+        |           +--------+--------+
-    |          |          |        |           |        |        |
-+---v---+ +---v---+ +---v---+    |     +-----v--+ +--v----+ +-v------+
-|Account| |Revenue| |Security|   |     |Episodic| |Semantic| |Working |
-|Agent  | |Agent  | |Agent   |   |     |SQLite  | |Qdrant  | |In-Mem  |
-+-------+ +-------+ +--------+  |     +--------+ +--------+ +--------+
-                                 |
-                    +------------+------------+
-                    |            |            |
-              +-----v----+ +----v-----+ +----v-----+
-              |  Ollama   | |  vLLM    | | LiteLLM  |
-              |  (Local)  | | (Serving)| | (Router) |
-              +-----------+ +----------+ +----------+
+                         ┌─────────────────────────┐
+                         │         Alfred           │
+                         │    Master Orchestrator   │
+                         │   health / routing / fx  │
+                         └────────────┬────────────┘
+                                      │
+              ┌───────────────────────┼───────────────────────┐
+              │                       │                       │
+    ┌─────────▼─────────┐  ┌────────▼─────────┐  ┌─────────▼─────────┐
+    │    Alii Core       │  │   Model Router    │  │   Memory Bridge   │
+    │  lifecycle + entry │  │  perf-aware LLM   │  │  3-layer sync     │
+    └─────────┬─────────┘  │  routing + learn   │  │  across cluster   │
+              │             └────────┬──────────┘  └─────────┬─────────┘
+              │                      │                       │
+   ┌──────────┼──────────┐           │            ┌──────────┼──────────┐
+   │          │          │           │            │          │          │
+┌──▼──┐  ┌───▼──┐  ┌───▼───┐       │       ┌────▼───┐ ┌───▼────┐ ┌──▼──────┐
+│Acct │  │Rev   │  │Sec    │       │       │Episodic│ │Semantic│ │Working  │
+│Vault│  │Agent │  │Agent  │       │       │SQLite  │ │Qdrant  │ │In-Mem   │
+└─────┘  └──────┘  └───────┘       │       └────────┘ └────────┘ └─────────┘
+                                   │
+                      ┌────────────┼────────────┐
+                      │            │            │
+                ┌─────▼─────┐ ┌───▼─────┐ ┌───▼──────┐
+                │  Ollama    │ │  vLLM   │ │ LiteLLM  │
+                │  (local)   │ │(serving)│ │ (router)  │
+                └───────────┘ └─────────┘ └──────────┘
 ```
 
 ---
 
 ## Agent Roster
 
-| Agent | File | Role |
+Every agent is a specialist. No generalists. No bloat. Each one owns its domain completely.
+
+| Agent | What It Does |
+|---|---|
+| **Alfred** | The boss. Intent classification, task dispatch, service lifecycle, health monitoring, auto-restart with backoff. Runs the whole show |
+| **Alii Core** | System entry point. Lifecycle management. The heartbeat |
+| **Model Router** | Performance-aware LLM selection. Tracks tokens/sec, success rates. Learns optimal routing over time |
+| **Memory Bridge** | Syncs episodic, semantic, and working memory across every node in the cluster |
+| **Security Agent** | Never sleeps. Scans for permission violations, hardcoded secrets, SSH anomalies, new users, unexpected open ports |
+| **Revenue Agent** | Autonomous GitHub presence, Reddit strategy, consulting pipeline, revenue tracking |
+| **Accounts Agent** | Fernet-encrypted vault. Atomic writes. Thread-safe. Master key never touches code or logs |
+| **Inventory Agent** | Full cluster state capture every 6 hours — packages, containers, models, services, hardware. Diff detection with digest alerts |
+| **Cluster Scan** | Multi-node health monitoring via SSH. Diagnostics across the entire fleet |
+| **iMessage Bridge** | Real-time two-way macOS messaging. Execute shell commands, send notifications, open apps — all from a text message |
+| **Todo Agent** | Persistent task queue with priority scheduling |
+| **Autoscale** | Dynamic resource allocation across cluster nodes |
+| **Distributed Brain** | Ray integration, Prometheus metrics, 2-hour optimization cycles |
+| **Business Agent** | Business strategy and entity management |
+| **Social Agent** | Social media orchestration and content scheduling |
+| **Law Agent** | Legal compliance monitoring |
+| **Crypto Agent** | Local ETH wallet management |
+| **Optimizer** | Storage optimization, cleanup, log rotation |
+
+---
+
+## Memory System
+
+Most AI systems forget everything between sessions. Alii-God remembers **everything**, across **every node**, in **three dimensions**.
+
+| Layer | Backend | What It Stores | Why It's Fast |
+|---|---|---|---|
+| **Episodic** | SQLite | Timestamped events, interaction history | WAL mode, 64MB cache, 30GB memory-mapped I/O |
+| **Semantic** | Qdrant | Concept retrieval via 768D vectors | 600+ indexed memories, hash fallback when offline |
+| **Working** | In-memory | Short-term task state | Thread-safe, connection-pooled, zero-latency |
+
+All layers sync across the cluster via `memory_bridge.py`. No memory is siloed. No context is lost.
+
+---
+
+## Model Router
+
+This isn't round-robin. This isn't random. The model router **measures, learns, and adapts**.
+
+| Model | Speed | Strength |
 |---|---|---|
-| **AlfredAgent** | `alfred.py` | Primary orchestrator and task dispatcher |
-| **AliiCore** | `alii_core.py` | Unified system entry point and lifecycle manager |
-| **AccountAgent** | `agents/account_agent.py` | Secure account and credential management |
-| **AccountsAgent** | `agents/accounts_agent.py` | Multi-account registry with Fernet vault |
-| **TodoAgent** | `agents/todo_agent.py` | Persistent task queue and priority scheduling |
-| **iMessageBridge** | `agents/imessage_bridge.py` | macOS iMessage read/write bridge |
-| **SecurityAgent** | `security_agent.py` | System hardening, intrusion detection, access control |
-| **RevenueAgent** | `revenue_agent.py` | Autonomous revenue strategy execution |
-| **InventoryAgent** | `inventory_agent.py` | Cluster hardware and software inventory |
-| **MemoryBridge** | `memory_bridge.py` | Cross-agent memory sync and retrieval |
-| **ModelRouter** | `alii_model_router.py` | LLM routing across local and cloud models |
-| **ClusterScan** | `cluster_scan.py` | Multi-node health monitoring and diagnostics |
-| **Autoscale** | `autoscale.py` | Dynamic resource allocation across the cluster |
+| `dolphin-phi:2.7b` | 28 tok/s | Lightning-fast for simple tasks |
+| `qwen2.5-coder:7b` | 12 tok/s | Best-in-class code generation |
+| `neural-chat:7b` | 11 tok/s | Natural conversation |
+| `dolphin-llama3:8b` | 10 tok/s | General purpose reasoning |
+| `qwen2.5:7b` | 12 tok/s | Long context (32K window) |
+| `wizard-vicuna:13b` | 5.5 tok/s | Deep multi-step reasoning |
+
+The router classifies every incoming task (code, analysis, planning, autonomous), selects the best model with a fallback chain, records latency and success rate, and dynamically optimizes over time. It gets better the more you use it.
+
+---
+
+## The Cluster
+
+All real hardware. All owned. Zero cloud spend. Zero recurring costs.
+
+```
+Node             Role                        OS
+──────────       ──────────────────────       ────────────
+Precision        Primary (GPU + storage)      Ubuntu Linux
+XPS              Secondary compute            Ubuntu Linux
+NUC              Tertiary / gateway           Ubuntu Linux
+MacBook          Dev + iMessage bridge        macOS
+```
+
+Connected via **Tailscale** mesh VPN. Orchestrated with **Ray**. Monitored with **Grafana + Prometheus**. Containerized with **Docker + microk8s**.
 
 ---
 
@@ -69,59 +166,29 @@ Alii-God runs a persistent ensemble of specialized agents across a distributed m
 | Layer | Technology |
 |---|---|
 | **Runtime** | Python 3.13 |
-| **LLM Serving** | Ollama (local), vLLM, LiteLLM router |
-| **Memory** | SQLite (episodic + working) + Qdrant (semantic vectors) |
+| **LLM Serving** | Ollama (local) + vLLM + LiteLLM proxy |
+| **Memory** | SQLite (episodic) + Qdrant (semantic) + In-memory (working) |
 | **Storage** | MinIO object store |
-| **Cluster** | Ray distributed computing |
+| **Compute** | Ray distributed computing |
 | **Workflows** | n8n automation |
 | **Networking** | Tailscale mesh VPN |
 | **Containers** | Docker + Kubernetes (microk8s) |
-| **Monitoring** | Grafana + Prometheus + custom dashboards |
-
----
-
-## Cluster Nodes
-
-```
-Node          Role                     OS
-----          ----                     --
-Precision     Primary (GPU + storage)  Ubuntu Linux
-XPS           Secondary compute        Ubuntu Linux
-NUC           Tertiary / gateway       Ubuntu Linux
-MacBook       Dev + iMessage bridge    macOS
-```
-
----
-
-## Memory Architecture
-
-Alii-God uses a three-layer memory system:
-
-| Layer | Backend | Purpose |
-|---|---|---|
-| **Episodic** | SQLite | Timestamped event logs, interaction history |
-| **Semantic** | Qdrant | Vector embeddings for concept retrieval |
-| **Working** | In-memory | In-flight task state and short-term context |
-
-All layers sync across cluster nodes via `memory_bridge.py`.
+| **Monitoring** | Grafana + Prometheus |
+| **Security** | Fernet encryption + continuous scanning + pre-commit hooks |
 
 ---
 
 ## Getting Started
 
 ```bash
-# Clone and enter
 git clone https://github.com/pierrecabell-commits/Alii-God.git
 cd Alii-God
 
-# Install dependencies
 pip install -r requirements.txt
 
-# Configure environment
 cp .env.example .env
-# Edit .env with your API keys and cluster config
+# Add your API keys and cluster config
 
-# Launch Alii
 ./alii_launcher.sh
 ```
 
@@ -129,13 +196,14 @@ cp .env.example .env
 
 ## Security Model
 
-All sensitive data is protected by design:
+Security isn't a checkbox. It's baked into every layer.
 
-- API keys and tokens live in `.env` only (never committed)
-- Credentials stored in encrypted Fernet vault (`accounts/vault.json`)
-- Private keys, WireGuard configs, and cluster credentials never committed
-- Pre-commit hooks scan for accidental secret exposure
-- Security agent runs continuous intrusion detection and system hardening
+- **Encrypted vault** — All credentials stored with Fernet encryption. Master key lives in `.env` only. Never in code. Never in logs
+- **Atomic writes** — Vault and config updates use tmp-rename pattern. System crash? Your data is intact
+- **Continuous scanning** — Security agent runs 24/7 with regex patterns for API keys, GitHub tokens, AWS secrets, private keys
+- **Permission auditing** — Detects world-readable sensitive files, unexpected listening ports, failed SSH attempts, new user accounts
+- **Pre-commit hooks** — Blocks accidental secret commits before they ever touch git history
+- **Zero cloud** — Your data never leaves your hardware. Period
 
 ---
 
@@ -144,37 +212,34 @@ All sensitive data is protected by design:
 ```
 Alii-God/
 ├── alfred.py                  # Master orchestrator
-├── alii_core.py               # Unified entry point
-├── alii_model_router.py       # LLM model selection and routing
-├── alii_distributed_brain.py  # Distributed compute layer
-├── memory_bridge.py           # Cross-agent memory sync
-├── memory_system.py           # JSON-based memory layer
-├── alii_sqlite_memory.py      # SQLite memory backend
-├── security_agent.py          # Security hardening and monitoring
-├── revenue_agent.py           # Revenue strategy execution
-├── inventory_agent.py         # Hardware/software inventory
-├── cluster_scan.py            # Cluster health monitoring
+├── alii_core.py               # System entry point
+├── config.py                  # Centralized config (40+ env vars)
+├── alii_model_router.py       # Performance-aware LLM routing
+├── alii_distributed_brain.py  # Ray + Prometheus integration
+├── memory_bridge.py           # Cross-cluster memory sync
+├── alii_sqlite_memory.py      # SQLite memory (WAL + mmap)
+├── alii_logging.py            # Standardized logging
+├── base_agent.py              # Abstract agent base class
+├── security_agent.py          # Continuous security monitoring
+├── revenue_agent.py           # Autonomous revenue strategies
+├── inventory_agent.py         # Cluster inventory + diff detection
+├── cluster_scan.py            # Multi-node health diagnostics
 ├── autoscale.py               # Dynamic resource scaling
 ├── alii_launcher.sh           # System launch script
-├── litellm_config.yaml        # LiteLLM proxy configuration
+├── pyproject.toml             # Dependencies + tooling
+├── requirements.txt           # Pip-compatible deps
 ├── agents/
-│   ├── account_agent.py       # Account credential management
-│   ├── accounts_agent.py      # Multi-account Fernet vault
-│   ├── todo_agent.py          # Task queue and scheduling
-│   ├── imessage_bridge.py     # iMessage read/write bridge
-│   ├── optimizer.py           # Storage optimization
+│   ├── accounts_agent.py      # Fernet-encrypted vault
+│   ├── imessage_bridge.py     # Two-way iMessage bridge
+│   ├── todo_agent.py          # Task queue + scheduling
 │   ├── business_agent.py      # Business strategy
-│   ├── social_agent.py        # Social media management
+│   ├── social_agent.py        # Social media orchestration
 │   ├── law_agent.py           # Legal compliance
+│   ├── optimizer.py           # Storage + cleanup
 │   └── ...
-├── security/                  # Security hardening scripts
-├── docs/                      # Documentation
-│   ├── business/              # Business plans and strategies
-│   ├── legal/                 # Legal documents
-│   ├── social/                # Social media assets
-│   └── accounts/              # Account setup guides
-├── memory/                    # Memory storage files
-├── upgrades/                  # System upgrade configs
+├── tests/                     # Unit + integration tests
+├── security/                  # Hardening scripts
+├── memory/                    # Memory storage
 └── hardware_info/             # Cluster hardware snapshots
 ```
 
@@ -184,9 +249,8 @@ Alii-God/
 
 | Repo | Role |
 |---|---|
-| **[Alii-God](https://github.com/pierrecabell-commits/Alii-God)** *(this repo)* | Python autonomous agent brain + cluster |
-| **[Alii-Core](https://github.com/pierrecabell-commits/Alii-Core)** | TypeScript gateway + multi-channel messaging |
-| **Alii-Public** | Public agent store *(coming soon)* |
+| **[Alii-God](https://github.com/pierrecabell-commits/Alii-God)** *(this repo)* | The brain. Agents, memory, cluster, autonomy |
+| **[Alii-Core](https://github.com/pierrecabell-commits/Alii-Core)** | The nervous system. Gateway, 34+ channels, plugin SDK |
 
 ---
 
@@ -198,4 +262,6 @@ See [LICENSE](LICENSE) for details.
 
 ---
 
-*Built by Pierre Cabell. Alii is a self-evolving autonomous AI system designed to think, earn, and grow without outside permission.*
+<p align="center">
+  <em>Alii doesn't wait for instructions. It decides. It acts. It learns. It grows.<br/>Every hour of every day.</em>
+</p>
