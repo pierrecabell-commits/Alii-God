@@ -21,11 +21,13 @@ except ImportError:
     HAS_REQUESTS = False
     import urllib.request as _urllib_req
 
-# ─── Paths ─────────────────────────────────────────────────────────────────────
-WORKDIR     = Path("/home/avalii/moltbot")
-PID_FILE    = WORKDIR / "logs/imessage_bridge.pid"
-LOG_FILE    = WORKDIR / "logs/imessage_bridge.log"
-STATE_FILE  = WORKDIR / "data/imessage_bridge_state.json"
+# ─── Paths (from centralized config) ───────────────────────────────────────────
+from config import (WORKDIR, LOG_DIR, DATA_DIR, LITELLM_URL as _LITELLM_URL,
+                    OLLAMA_URL as _OLLAMA_URL, MAC_CONTROLLER_PORT as _MAC_CTRL_PORT,
+                    ENV_FILE, load_env)
+PID_FILE    = LOG_DIR / "imessage_bridge.pid"
+LOG_FILE    = LOG_DIR / "imessage_bridge.log"
+STATE_FILE  = DATA_DIR / "imessage_bridge_state.json"
 POLL_INTERVAL = 10
 CONTACT_NUM   = "3308073932"
 MAX_SEEN_IDS  = 2000   # cap seen_ids to avoid unbounded growth
@@ -41,22 +43,13 @@ logging.basicConfig(
 log = logging.getLogger("imessage_bridge")
 
 # ─── Load .env ─────────────────────────────────────────────────────────────────
-def _load_env():
-    env_file = WORKDIR / ".env"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                os.environ.setdefault(k.strip(), v.strip())
-
-_load_env()
+load_env()
 MAC_IP             = os.environ.get("MACBOOK_TAILSCALE_IP", "")
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
-LITELLM_URL        = "http://127.0.0.1:4000"
-OLLAMA_URL         = "http://127.0.0.1:11434"
-MAC_CONTROLLER_PORT = 7020
+LITELLM_URL        = _LITELLM_URL
+OLLAMA_URL         = _OLLAMA_URL
+MAC_CONTROLLER_PORT = _MAC_CTRL_PORT
 
 def _mac_url(endpoint):
     return f"http://{MAC_IP}:{MAC_CONTROLLER_PORT}{endpoint}"

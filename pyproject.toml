@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel>=0.41.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "alii-god"
+version = "2.0.0"
+description = "Alii-God autonomous AI orchestration platform"
+readme = "README.md"
+license = "LicenseRef-Proprietary"
+requires-python = ">=3.10"
+authors = [
+    { name = "Pierre Cabell" },
+]
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "anthropic>=0.18.0",
+    "cryptography>=41.0.0",
+    "requests>=2.31.0",
+    "aiohttp>=3.9.0",
+    "qdrant-client>=1.7.0",
+    "psutil>=5.9.0",
+    "prometheus-client>=0.19.0",
+    "paramiko>=3.4.0",
+    "praw>=7.7.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "venv/*",
+    ".venv/*",
+    "*/site-packages/*",
+    "setup.py",
+]
+
+[tool.coverage.report]
+fail_under = 50
+show_missing = true

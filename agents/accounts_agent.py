@@ -21,11 +21,8 @@ from pathlib import Path
 
 log = logging.getLogger("alii.accounts_agent")
 
-WORKDIR      = Path("/home/avalii/moltbot")
-VAULT_FILE   = WORKDIR / "accounts" / "vault.json"
-ACCOUNTS_DIR = WORKDIR / "accounts"
+from config import (WORKDIR, VAULT_FILE, ACCOUNTS_DIR, ENV_FILE)
 DOCS_DIR     = WORKDIR / "docs" / "accounts"
-ENV_FILE     = WORKDIR / ".env"
 
 # Global lock — prevents race conditions when multiple callers hit the vault concurrently
 _VAULT_LOCK = threading.Lock()

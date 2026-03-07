@@ -10,16 +10,11 @@ import sqlite3
 import hashlib
 from datetime import datetime
 from pathlib import Path
+from config import (QDRANT_URL, SQLITE_DB, MEMORIES_JSON, COLLECTION_NAME,
+                    EMBED_DIM, LOG_DIR, DATA_DIR, OLLAMA_URL)
 
-QDRANT_URL = "http://localhost:6333"
-SQLITE_DB = "/home/avalii/moltbot/memory/alii_core.db"
-MEMORIES_JSON = "/home/avalii/moltbot/memory/memories.json"
-COLLECTION_NAME = "alii_memories"
-LOG_FILE = "/home/avalii/moltbot/logs/memory_bridge.log"
-STATE_FILE = "/home/avalii/moltbot/data/memory_bridge_state.json"
-
-# Embedding dimension for nomic-embed-text or fallback hash embedding
-EMBED_DIM = 768
+LOG_FILE = str(LOG_DIR / "memory_bridge.log")
+STATE_FILE = str(DATA_DIR / "memory_bridge_state.json")
 
 # Module-level QdrantClient singleton — avoids per-call connection overhead.
 _qdrant_client = None
@@ -49,7 +44,7 @@ def get_embedding_ollama(text: str) -> list:
     import json as _json
     try:
         payload = _json.dumps({"model": "nomic-embed-text", "prompt": text[:2000]}).encode()
-        req = urllib.request.Request("http://localhost:11434/api/embeddings", payload)
+        req = urllib.request.Request(f"{OLLAMA_URL}/api/embeddings", payload)
         req.add_header("Content-Type", "application/json")
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = _json.loads(resp.read())
@@ -126,7 +121,7 @@ def load_sqlite_memories() -> list:
 def load_json_memories() -> list:
     """Load memories from memories.json."""
     items = []
-    for json_path in [MEMORIES_JSON, "/home/avalii/Alii/memory/memories.json"]:
+    for json_path in [str(MEMORIES_JSON)]:
         if not os.path.exists(json_path):
             continue
         try:

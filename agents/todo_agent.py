@@ -17,9 +17,9 @@ from pathlib import Path
 from datetime import datetime, date, timedelta
 from typing import Optional
 
-WORKDIR   = Path("/home/avalii/moltbot")
-DATA_FILE = WORKDIR / "data" / "owner_todos.json"
-LOG_FILE  = WORKDIR / "logs" / "todo_agent.log"
+from config import WORKDIR, DATA_DIR, LOG_DIR
+DATA_FILE = DATA_DIR / "owner_todos.json"
+LOG_FILE  = LOG_DIR / "todo_agent.log"
 
 # ── Dedicated logger (NOT basicConfig — avoids polluting root logger) ──────────
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)

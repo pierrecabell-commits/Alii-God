@@ -8,6 +8,7 @@ import json, time, os
 from dataclasses import dataclass
 from typing import List
 import requests
+from config import PERF_LOG, OLLAMA_URL
 
 @dataclass
 class ModelProfile:
@@ -41,8 +42,8 @@ OLLAMA_OPTIONS = {"num_thread": 16, "num_batch": 1024, "num_ctx": 8192, "num_gpu
 
 class AliiModelRouter:
     def __init__(self):
-        self.base_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-        self.perf_log = "/home/avalii/moltbot/memory/logs/model_perf.json"
+        self.base_url = OLLAMA_URL
+        self.perf_log = str(PERF_LOG)
         os.makedirs(os.path.dirname(self.perf_log), exist_ok=True)
         self.perf_data = self._load_perf()
         self._last_save = 0.0

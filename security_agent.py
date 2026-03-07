@@ -20,15 +20,11 @@ import argparse
 from pathlib import Path
 from datetime import datetime, timedelta
 
-# ── Configuration ─────────────────────────────────────────────────────────────
+# ── Configuration (from centralized config) ───────────────────────────────────
+from config import (NTFY_URL, SCAN_ROOT, DATA_DIR, LOG_DIR, APPROVED_PORTS)
 
-NTFY_TOPIC = "alii-alerts"
-NTFY_URL = f"http://localhost:8080/{NTFY_TOPIC}"
-SCAN_ROOT = "/home/avalii"
-STATE_FILE = "/home/avalii/moltbot/data/security_state.json"
-LOG_FILE = "/home/avalii/moltbot/logs/security_agent.log"
-
-APPROVED_PORTS = {3000, 8001, 11434, 22, 41641, 6333, 4000, 9000, 9001, 5678, 9090, 3001}
+STATE_FILE = str(DATA_DIR / "security_state.json")
+LOG_FILE = str(LOG_DIR / "security_agent.log")
 
 SENSITIVE_PATTERNS = [
     "*.key", "*.pem", "*.env", "*.conf",
