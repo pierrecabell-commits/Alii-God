@@ -1,0 +1,11 @@
+[Unit]
+Description=Alii Security Agent - Daily Full Scan at 03:00
+Requires=alii-security-daily.service
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+Unit=alii-security-daily.service
+
+[Install]
+WantedBy=timers.target

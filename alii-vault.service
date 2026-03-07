@@ -1,0 +1,15 @@
+[Unit]
+Description=Alii Vault Daemon — Encrypted Credential Store
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/avalii/moltbot
+ExecStart=/usr/bin/python3 /home/avalii/moltbot/vault/vault_manager.py daemon --password %I
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

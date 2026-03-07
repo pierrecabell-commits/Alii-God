@@ -1,0 +1,19 @@
+{
+  "name": "system_stats",
+  "version": "1.0",
+  "timestamp": "2026-02-06T22:36:05.508847",
+  "data": {
+    "description": "Hardware and system statistics monitoring",
+    "capabilities": [
+      "cpu_stats",
+      "memory_stats",
+      "disk_stats",
+      "network_stats"
+    ],
+    "methods": [
+      "get_system_stats()"
+    ],
+    "status": "active"
+  },
+  "checksum": "c8b6f848bf0241c93d58c9ec30016bb69a9ace04b1a1c1d288afed9a27401a43"
+}
