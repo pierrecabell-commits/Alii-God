@@ -11,28 +11,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 import urllib.request, urllib.error
 
-# ─── Paths & constants ────────────────────────────────────────────────────────
-WORKDIR    = Path("/home/avalii/moltbot")
-DB_PATH    = WORKDIR / "memory/alii_core.db"
-PERF_LOG   = WORKDIR / "memory/logs/model_perf.json"
-LOG_DIR    = WORKDIR / "logs"
-HISTORY    = Path.home() / ".alii_history"
-ALFRED_URL = "http://127.0.0.1:7000"
-LITELLM    = "http://127.0.0.1:4000"
-OLLAMA     = "http://127.0.0.1:11434"
-VERSION    = "2.0.0"
+# ─── Paths & constants (from centralized config) ─────────────────────────────
+from config import (WORKDIR, DB_PATH, PERF_LOG, LOG_DIR, ALFRED_URL,
+                    LITELLM_URL as LITELLM, OLLAMA_URL as OLLAMA, VERSION,
+                    HISTORY_FILE as HISTORY,
+                    MAC_CONTROLLER_PORT as _MAC_CONTROLLER_PORT,
+                    load_env, ensure_dirs)
 
-# ─── Load .env ────────────────────────────────────────────────────────────────
-def _load_env():
-    env_file = WORKDIR / ".env"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                os.environ.setdefault(k.strip(), v.strip())
-
-_load_env()
+load_env()
+ensure_dirs()
 
 # ─── ANSI colors ──────────────────────────────────────────────────────────────
 C = {
@@ -283,7 +270,6 @@ def send_imessage(msg: str, number: str = "3308073932") -> str:
 
 
 # ─── Mac Controller HTTP tools ────────────────────────────────────────────────
-_MAC_CONTROLLER_PORT = 7020
 
 def _get_mac_ip():
     return os.environ.get("MACBOOK_TAILSCALE_IP", "")

@@ -24,17 +24,19 @@ import urllib.error
 from datetime import datetime
 from pathlib import Path
 
-# Load .env
+# Load .env via centralized config
+from config import (WORKDIR, LOG_DIR, DATA_DIR, NTFY_URL, ENV_FILE,
+                    CONTACT_FORM_PORT, load_env)
+load_env()
 try:
     from dotenv import load_dotenv
-    load_dotenv("/home/avalii/moltbot/.env")
+    load_dotenv(str(ENV_FILE))
 except ImportError:
     pass
 
-REPORT_FILE = "/home/avalii/moltbot/logs/money_report.json"
-STATE_FILE = "/home/avalii/moltbot/data/revenue_state.json"
-LOG_FILE = "/home/avalii/moltbot/logs/revenue_agent.log"
-NTFY_URL = "http://localhost:8080/alii-alerts"
+REPORT_FILE = str(LOG_DIR / "money_report.json")
+STATE_FILE = str(DATA_DIR / "revenue_state.json")
+LOG_FILE = str(LOG_DIR / "revenue_agent.log")
 
 PROJECT_NAME = "Alii AI"
 PROJECT_DESCRIPTION = (
@@ -300,7 +302,7 @@ def start_contact_server(port: int = 8888):
     from http.server import BaseHTTPRequestHandler, HTTPServer
     import urllib.parse
 
-    inquiries_file = "/home/avalii/moltbot/data/consulting_inquiries.json"
+    inquiries_file = str(DATA_DIR / "consulting_inquiries.json")
 
     def save_inquiry(data: dict):
         inquiries = []

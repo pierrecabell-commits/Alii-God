@@ -10,11 +10,11 @@ import subprocess
 import hashlib
 from datetime import datetime
 from pathlib import Path
+from config import DATA_DIR, LOG_DIR, NTFY_URL
 
-INVENTORY_FILE = "/home/avalii/moltbot/data/system_inventory.json"
-PREV_INVENTORY_FILE = "/home/avalii/moltbot/data/system_inventory_prev.json"
-LOG_FILE = "/home/avalii/moltbot/logs/inventory_agent.log"
-NTFY_URL = "http://localhost:8080/alii-alerts"
+INVENTORY_FILE = str(DATA_DIR / "system_inventory.json")
+PREV_INVENTORY_FILE = str(DATA_DIR / "system_inventory_prev.json")
+LOG_FILE = str(LOG_DIR / "inventory_agent.log")
 
 
 def log(msg: str):
@@ -250,7 +250,7 @@ def format_digest(changes: dict) -> str:
 
 def main():
     log("=== Inventory Agent START ===")
-    os.makedirs("/home/avalii/moltbot/data", exist_ok=True)
+    os.makedirs(str(DATA_DIR), exist_ok=True)
 
     # Load previous inventory if exists
     prev_inventory = {}

@@ -20,9 +20,12 @@ from typing import Optional
 import aiohttp
 from aiohttp import web
 
-# ── Todo agent import (best-effort) ────────────────────────────────────────────
+# ── Config & Todo agent import (best-effort) ─────────────────────────────────
+from config import WORKDIR, LOG_DIR, MEMORY_DIR, ensure_dirs
+ensure_dirs()
+
 try:
-    sys.path.insert(0, "/home/avalii/moltbot")
+    sys.path.insert(0, str(WORKDIR))
     from agents.todo_agent import todo as _todo_agent
     def _add_todo(title: str, description: str = "", category: str = "action",
                   priority: str = "medium", context: str = ""):
@@ -35,14 +38,9 @@ try:
 except Exception as _e:
     def _add_todo(*a, **kw): pass
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
-WORKDIR   = Path("/home/avalii/moltbot")
-LOG_DIR   = WORKDIR / "logs"
+# ── Paths (from centralized config) ───────────────────────────────────────────
 LOG_FILE  = LOG_DIR / "alfred.log"
-STATE_FILE = WORKDIR / "memory" / "alfred_state.json"
-
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-(WORKDIR / "memory").mkdir(parents=True, exist_ok=True)
+STATE_FILE = MEMORY_DIR / "alfred_state.json"
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(

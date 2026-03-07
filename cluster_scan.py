@@ -8,10 +8,11 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from config import CLUSTER_CREDENTIALS_FILE, DATA_DIR, LOG_DIR
 
-CREDENTIALS_FILE = "/home/avalii/moltbot/cluster_credentials.json"
-OUTPUT_DIR = "/home/avalii/moltbot/data"
-LOG_FILE = "/home/avalii/moltbot/logs/cluster_scan.log"
+CREDENTIALS_FILE = str(CLUSTER_CREDENTIALS_FILE)
+OUTPUT_DIR = str(DATA_DIR)
+LOG_FILE = str(LOG_DIR / "cluster_scan.log")
 
 NODE_MAP = {
     "precision": {"output": "node1_inventory.json", "is_local": True},
