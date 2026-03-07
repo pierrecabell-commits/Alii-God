@@ -1,0 +1,12 @@
+[Unit]
+Description=Alii Inventory Agent - Run every 6 hours
+Requires=alii-inventory.service
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+Persistent=true
+Unit=alii-inventory.service
+
+[Install]
+WantedBy=timers.target

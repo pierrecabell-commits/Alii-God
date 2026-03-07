@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-03-04T09:00:00.043188",
+  "triggered_by": "daily_9am_cron",
+  "release_notes": "# Alii Changelog\n\n## [2026-03-04] \u2014 2026-03-04\n\n### Features\n- `99307f5` feat: AccountsAgent (Fernet vault) + CryptoAgent (local ETH wallet) _Alii (2026-02-27)_\n- `7c79585` feat: zero-cost-first reven",
+  "platforms": {
+    "github": {
+      "action": "CHANGELOG.md updated",
+      "status": "done"
+    },
+    "twitter": {
+      "action": "Post release thread (stub \u2014 set TWITTER_API_KEY)",
+      "status": "pending_credentials"
+    },
+    "reddit": {
+      "action": "Post to r/selfhosted (stub \u2014 set REDDIT_CLIENT_ID)",
+      "status": "pending_credentials"
+    },
+    "linkedin": {
+      "action": "Post update (stub \u2014 set LINKEDIN_TOKEN)",
+      "status": "pending_credentials"
+    }
+  },
+  "flywheel_status": "partial \u2014 changelog written, social posting pending API keys"
+}

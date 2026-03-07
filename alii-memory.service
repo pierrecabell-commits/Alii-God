@@ -1,0 +1,11 @@
+[Unit]
+Description=Alii Memory Bridge - Qdrant Vector Indexer
+After=network.target
+
+[Service]
+Type=oneshot
+User=avalii
+WorkingDirectory=/home/avalii/moltbot
+ExecStart=/usr/bin/python3 /home/avalii/moltbot/memory_bridge.py
+StandardOutput=append:/home/avalii/moltbot/logs/memory_bridge.log
+StandardError=append:/home/avalii/moltbot/logs/memory_bridge.log
