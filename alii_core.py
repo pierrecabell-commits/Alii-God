@@ -257,7 +257,7 @@ def send_imessage(msg: str, number: str = "3308073932") -> str:
             f'to buddy "{number}" of service 1'
         )
         # Use list-form subprocess to avoid shell interpretation of pipe chars
-        cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+        cmd = ["ssh", "-o", "ConnectTimeout=10",
                f"{mac_usr}@{mac_ip}", "osascript", "-e", script]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)

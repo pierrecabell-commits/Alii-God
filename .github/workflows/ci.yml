@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install mypy
+      - run: mypy --ignore-missing-imports --no-error-summary config.py alii_model_router.py base_agent.py alii_logging.py alii_sqlite_memory.py
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/ -v --tb=short --cov=. --cov-report=term-missing
+        env:
+          ALII_WORKDIR: ${{ github.workspace }}
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install detect-secrets
+      - run: detect-secrets scan --all-files --exclude-files '\.env\.example' --exclude-files 'docs/' --exclude-files 'deleted_archive/' > .secrets-report.json
+      - run: |
+          python3 -c "
+          import json
+          with open('.secrets-report.json') as f:
+              data = json.load(f)
+          results = data.get('results', {})
+          total = sum(len(v) for v in results.values())
+          if total > 0:
+              print(f'WARNING: {total} potential secrets found')
+              for fname, findings in results.items():
+                  for f_item in findings:
+                      print(f'  {fname}:{f_item.get(\"line_number\", \"?\")} - {f_item.get(\"type\", \"unknown\")}')
+          else:
+              print('No secrets detected')
+          "

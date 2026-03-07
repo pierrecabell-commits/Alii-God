@@ -18,7 +18,7 @@ from pathlib import Path
 
 log = logging.getLogger("alii.crypto_agent")
 
-WORKDIR    = Path("/home/avalii/moltbot")
+WORKDIR    = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)))
 README     = WORKDIR / "README.md"
 ETH_RPC    = "https://eth.llamarpc.com"   # free public RPC, no API key
 

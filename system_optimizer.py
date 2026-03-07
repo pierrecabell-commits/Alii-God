@@ -19,13 +19,13 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [optimizer] %(levelname)s %(message)s",
     handlers=[
-        logging.FileHandler("/home/avalii/moltbot/logs/optimizer_run.log"),
+        logging.FileHandler(str(Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent))) / "logs" / "optimizer_run.log")),
         logging.StreamHandler(sys.stdout),
     ],
 )
 log = logging.getLogger("system_optimizer")
 
-WORKDIR = Path("/home/avalii/moltbot")
+WORKDIR = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent)))
 REPORT  = WORKDIR / "memory" / "optimization_report.json"
 LOG_MAX_DAYS = 7
 

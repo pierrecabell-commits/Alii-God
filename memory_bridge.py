@@ -8,6 +8,7 @@ import os
 import json
 import sqlite3
 import hashlib
+import urllib.error
 from datetime import datetime
 from pathlib import Path
 from config import (QDRANT_URL, SQLITE_DB, MEMORIES_JSON, COLLECTION_NAME,
@@ -51,8 +52,8 @@ def get_embedding_ollama(text: str) -> list:
             emb = data.get("embedding", [])
             if emb:
                 return emb
-    except Exception:
-        pass
+    except (urllib.error.URLError, TimeoutError, ValueError, KeyError) as e:
+        log(f"Ollama embedding failed: {e}")
     return None
 
 
@@ -86,7 +87,7 @@ def ensure_collection(client, dim: int):
     try:
         client.get_collection(COLLECTION_NAME)
         log(f"Collection '{COLLECTION_NAME}' already exists")
-    except Exception:
+    except (ValueError, Exception) as e:
         client.create_collection(
             collection_name=COLLECTION_NAME,
             vectors_config=VectorParams(size=dim, distance=Distance.COSINE),

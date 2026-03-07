@@ -18,7 +18,7 @@ def get_client():
     """Create boto3 S3 client pointing at MinIO."""
     try:
         from dotenv import load_dotenv
-        load_dotenv("/home/avalii/moltbot/.env")
+        load_dotenv(str(Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent))) / ".env"))
     except ImportError:
         pass
 

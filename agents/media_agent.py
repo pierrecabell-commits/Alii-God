@@ -14,7 +14,7 @@ from pathlib import Path
 
 log = logging.getLogger("alii.media_agent")
 
-WORKDIR = Path("/home/avalii/moltbot")
+WORKDIR = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)))
 TODO_FILE = WORKDIR / "alfred_todo.json"
 
 

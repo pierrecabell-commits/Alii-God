@@ -10,15 +10,22 @@ import json, logging, os, subprocess, sys, time, requests
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, "/home/avalii/moltbot")
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_project_root))
 try:
     from vault.vault_client import get_secret
 except ImportError:
     def get_secret(k, d=None): return os.getenv(k, d)
 
-LOG_FILE   = Path("/home/avalii/moltbot/logs/imessage_agent.log")
-STATE_FILE = Path("/home/avalii/moltbot/memory/imessage_bb_state.json")
-WORKDIR    = Path("/home/avalii/moltbot")
+try:
+    from config import WORKDIR as _CFG_WORKDIR, LOG_DIR, MEMORY_DIR
+    WORKDIR    = _CFG_WORKDIR
+    LOG_FILE   = LOG_DIR / "imessage_agent.log"
+    STATE_FILE = MEMORY_DIR / "imessage_bb_state.json"
+except ImportError:
+    WORKDIR    = _project_root
+    LOG_FILE   = _project_root / "logs" / "imessage_agent.log"
+    STATE_FILE = _project_root / "memory" / "imessage_bb_state.json"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -115,7 +122,7 @@ def _ssh_run(script: str) -> str | None:
             continue
         try:
             r = subprocess.run(
-                ["ssh", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
+                ["ssh", "-o", "ConnectTimeout=5",
                  f"{_cfg('MACBOOK_SSH_USER', 'pierre')}@{host}",
                  f"osascript -e '{script}'"],
                 capture_output=True, text=True, timeout=15
@@ -158,7 +165,7 @@ def process_command(text: str, chat_guid: str, bb: BlueBubblesClient) -> str:
 
     elif txt == "report":
         try:
-            status_file = Path("/home/avalii/moltbot/data/alii_status.json")
+            status_file = WORKDIR / "data" / "alii_status.json"
             if status_file.exists():
                 data = json.loads(status_file.read_text())
                 return f"System report:\n{json.dumps(data, indent=2)[:500]}"
@@ -167,7 +174,7 @@ def process_command(text: str, chat_guid: str, bb: BlueBubblesClient) -> str:
 
     elif txt in ("money", "revenue"):
         try:
-            rev_file = Path("/home/avalii/moltbot/data/revenue_live.json")
+            rev_file = WORKDIR / "data" / "revenue_live.json"
             if rev_file.exists():
                 data = json.loads(rev_file.read_text())
                 return f"Revenue: {json.dumps(data, indent=2)[:400]}"
@@ -176,7 +183,7 @@ def process_command(text: str, chat_guid: str, bb: BlueBubblesClient) -> str:
 
     elif txt == "secure":
         try:
-            r = subprocess.run(["python3", "/home/avalii/moltbot/security_agent.py", "--quick"],
+            r = subprocess.run(["python3", str(WORKDIR / "security_agent.py"), "--quick"],
                                capture_output=True, text=True, timeout=30)
             return r.stdout.strip()[:400] or "Security check complete"
         except (OSError, subprocess.TimeoutExpired):

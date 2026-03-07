@@ -9,13 +9,14 @@ attorney before relying on any document generated here for legal purposes.
 
 import json
 import logging
+import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
 log = logging.getLogger("alii.law_agent")
 
-WORKDIR   = Path("/home/avalii/moltbot")
+WORKDIR   = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)))
 LEGAL_DIR = WORKDIR / "docs" / "legal"
 LOG_DIR   = WORKDIR / "logs"
 

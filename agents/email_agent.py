@@ -11,16 +11,17 @@ from datetime import datetime, timezone
 from email.header import decode_header
 from pathlib import Path
 
-sys.path.insert(0, "/home/avalii/moltbot")
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_project_root))
 try:
     from vault.vault_client import get_secret
 except ImportError:
     def get_secret(k, d=None): return os.getenv(k, d)
 
-LOG_FILE      = Path("/home/avalii/moltbot/logs/email_agent.log")
-THREADS_FILE  = Path("/home/avalii/moltbot/memory/email_threads.json")
-VERIF_FILE    = Path("/home/avalii/moltbot/memory/verification_emails.json")
-WORKDIR       = Path("/home/avalii/moltbot")
+WORKDIR       = Path(os.environ.get("ALII_WORKDIR", str(_project_root)))
+LOG_FILE      = WORKDIR / "logs" / "email_agent.log"
+THREADS_FILE  = WORKDIR / "memory" / "email_threads.json"
+VERIF_FILE    = WORKDIR / "memory" / "verification_emails.json"
 
 logging.basicConfig(
     level=logging.INFO,

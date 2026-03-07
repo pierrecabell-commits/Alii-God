@@ -12,9 +12,10 @@ import threading
 
 class AliiOptimizer:
     def __init__(self):
-        self.base_dirs = ["/home/avalii/Alii", "/home/avalii/alii-ai", "/home/avalii/alii_dashboard"]
-        self.log_file = "/home/avalii/Alii/optimizer.log"
-        self.state_file = "/home/avalii/Alii/optimizer_state.json"
+        _workdir = os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent))
+        self.base_dirs = [_workdir]
+        self.log_file = str(Path(_workdir) / "logs" / "optimizer.log")
+        self.state_file = str(Path(_workdir) / "data" / "optimizer_state.json")
         self.running = True
         self.scan_interval = 300
         self.load_state()
@@ -124,7 +125,7 @@ class AliiOptimizer:
         return False
 
     def safe_delete(self, fpath):
-        archive_dir = "/home/avalii/Alii/deleted_archive"
+        archive_dir = os.path.join(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)), "deleted_archive")
         os.makedirs(archive_dir, exist_ok=True)
 
         fname = os.path.basename(fpath)

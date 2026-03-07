@@ -25,13 +25,13 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [ntfy] %(levelname)s %(message)s",
     handlers=[
-        logging.FileHandler("/home/avalii/moltbot/logs/ntfy_listener.log"),
+        logging.FileHandler(str(Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent))) / "logs" / "ntfy_listener.log")),
         logging.StreamHandler(sys.stdout),
     ],
 )
 log = logging.getLogger("alii.ntfy")
 
-WORKDIR        = Path("/home/avalii/moltbot")
+WORKDIR        = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)))
 TODO_FILE      = WORKDIR / "alfred_todo.json"
 COMMANDS_TOPIC = "alii-precision-commands"
 REPLY_TOPIC    = "alii-precision"

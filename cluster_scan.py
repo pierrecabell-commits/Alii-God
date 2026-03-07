@@ -77,7 +77,11 @@ def scan_remote_node(name: str, ip: str, user: str, password: str) -> dict:
     try:
         import paramiko
         client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # Load system known_hosts for host key verification (no MITM bypass)
+        known_hosts = Path.home() / ".ssh" / "known_hosts"
+        if known_hosts.exists():
+            client.load_host_keys(str(known_hosts))
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())
         client.connect(
             ip,
             username=user,

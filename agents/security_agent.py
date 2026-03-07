@@ -15,7 +15,10 @@ from pathlib import Path
 
 log = logging.getLogger("alii.security_agent")
 
-WORKDIR   = Path("/home/avalii/moltbot")
+try:
+    from config import WORKDIR
+except ImportError:
+    WORKDIR = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)))
 NET_MAP   = WORKDIR / "memory" / "network_map.json"
 REPORT    = WORKDIR / "memory" / "threat_report.json"
 

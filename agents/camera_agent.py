@@ -17,7 +17,7 @@ from pathlib import Path
 
 log = logging.getLogger("alii.camera_agent")
 
-WORKDIR      = Path("/home/avalii/moltbot")
+WORKDIR      = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)))
 SNAPSHOT_DIR = WORKDIR / "snapshots"
 
 # Ports commonly used by IP cameras:

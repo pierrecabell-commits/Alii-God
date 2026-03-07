@@ -14,7 +14,8 @@ import requests
 # ---------------------------------------------------------------------------
 # Vault integration
 # ---------------------------------------------------------------------------
-sys.path.insert(0, "/home/avalii/moltbot")
+_project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_project_root))
 try:
     from vault.vault_client import get_secret
 except ImportError:
@@ -23,7 +24,10 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Constants — file paths
 # ---------------------------------------------------------------------------
-WORKDIR         = Path("/home/avalii/moltbot")
+try:
+    from config import WORKDIR, DATA_DIR
+except ImportError:
+    WORKDIR = _project_root
 ACCOUNTS_FILE   = WORKDIR / "data" / "accounts_registry.json"
 REVENUE_FILE    = WORKDIR / "data" / "revenue_live.json"
 PERSONAL_INFO   = WORKDIR / "data" / "personal_info_patterns.json"
@@ -85,9 +89,13 @@ def _atomic_write_json(path: Path, data, mode: int = 0o600):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     try:
-        tmp.write_text(json.dumps(data, indent=2))
+        # Set restrictive permissions on tmp file BEFORE writing sensitive data
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        # chmod before rename so the file is never world-readable at destination
+        tmp.chmod(mode)
         tmp.rename(path)
-        path.chmod(mode)
     except (TypeError, OSError) as e:
         log.warning(f"atomic_write_json failed for {path}: {e}")
         try:

@@ -15,7 +15,7 @@ from pathlib import Path
 
 log = logging.getLogger("alii.alexa_agent")
 
-WORKDIR = Path("/home/avalii/moltbot")
+WORKDIR = Path(os.environ.get("ALII_WORKDIR", str(Path(__file__).resolve().parent.parent)))
 LOG_DIR = WORKDIR / "logs"
 
 # Known/candidate Alexa device IPs from network scan
