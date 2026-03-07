@@ -1,0 +1,130 @@
+{
+  "generated": "2026-02-27T05:31:18.865703",
+  "currency": "USD",
+  "assumptions": {
+    "avg_monthly_price": 20,
+    "free_to_paid_conversion": 0.05,
+    "monthly_churn": 0.03,
+    "cac": 45,
+    "ltv_months": 33,
+    "gross_margin": 0.85,
+    "monthly_burn_y1": 5000,
+    "monthly_burn_y2": 15000,
+    "monthly_burn_y3": 30000
+  },
+  "projections": {
+    "year_1": {
+      "q1": {
+        "new_customers": 10,
+        "mrr": 200,
+        "burn": 15000,
+        "net": -14800
+      },
+      "q2": {
+        "new_customers": 25,
+        "mrr": 700,
+        "burn": 15000,
+        "net": -14300
+      },
+      "q3": {
+        "new_customers": 50,
+        "mrr": 1700,
+        "burn": 15000,
+        "net": -13300
+      },
+      "q4": {
+        "new_customers": 65,
+        "mrr": 3000,
+        "burn": 15000,
+        "net": -12000
+      },
+      "annual": {
+        "customers": 150,
+        "arr": 36000,
+        "burn": 60000,
+        "loss": -24000
+      }
+    },
+    "year_2": {
+      "q1": {
+        "new_customers": 150,
+        "mrr": 6000,
+        "burn": 45000,
+        "net": -39000
+      },
+      "q2": {
+        "new_customers": 250,
+        "mrr": 11000,
+        "burn": 45000,
+        "net": -34000
+      },
+      "q3": {
+        "new_customers": 350,
+        "mrr": 17000,
+        "burn": 45000,
+        "net": -28000
+      },
+      "q4": {
+        "new_customers": 450,
+        "mrr": 24000,
+        "burn": 45000,
+        "net": -21000
+      },
+      "annual": {
+        "customers": 1200,
+        "arr": 288000,
+        "burn": 180000,
+        "profit": 108000
+      }
+    },
+    "year_3": {
+      "q1": {
+        "new_customers": 600,
+        "mrr": 36000,
+        "burn": 90000,
+        "net": -54000
+      },
+      "q2": {
+        "new_customers": 900,
+        "mrr": 55000,
+        "burn": 90000,
+        "net": -35000
+      },
+      "q3": {
+        "new_customers": 1200,
+        "mrr": 75000,
+        "burn": 90000,
+        "net": -15000
+      },
+      "q4": {
+        "new_customers": 1300,
+        "mrr": 100000,
+        "burn": 90000,
+        "net": 10000
+      },
+      "annual": {
+        "customers": 5000,
+        "arr": 1200000,
+        "burn": 360000,
+        "profit": 840000
+      }
+    }
+  },
+  "unit_economics": {
+    "ltv": 660,
+    "cac": 45,
+    "ltv_cac_ratio": 14.7,
+    "payback_months": 2.25,
+    "gross_margin_pct": 85
+  },
+  "break_even": {
+    "month": 18,
+    "mrr_required": 5000,
+    "customers_required": 250
+  },
+  "runway": {
+    "seed_raise": 250000,
+    "monthly_burn": 14000,
+    "months": 17.8
+  }
+}

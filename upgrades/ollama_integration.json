@@ -1,0 +1,18 @@
+{
+  "name": "AliiLLM_integration",
+  "version": "1.0",
+  "timestamp": "2026-02-06T22:36:05.509258",
+  "data": {
+    "description": "AliiLLM AI model integration and checking",
+    "capabilities": [
+      "AliiLLM_check",
+      "model_detection",
+      "ai_integration"
+    ],
+    "methods": [
+      "check_AliiLLM()"
+    ],
+    "status": "active"
+  },
+  "checksum": "db6f09a4a24873bbf374d959748abb0b56f6091c802530c774210e8a9e71a0c6"
+}

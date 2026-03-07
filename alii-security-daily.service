@@ -1,0 +1,11 @@
+[Unit]
+Description=Alii Security Agent - Daily Full Scan
+After=network.target
+
+[Service]
+Type=oneshot
+User=avalii
+WorkingDirectory=/home/avalii/moltbot
+ExecStart=/usr/bin/python3 /home/avalii/moltbot/security_agent.py --mode full
+StandardOutput=append:/home/avalii/moltbot/logs/security_agent.log
+StandardError=append:/home/avalii/moltbot/logs/security_agent.log

@@ -1,0 +1,16 @@
+[Unit]
+Description=Alii AI Optimization Agent
+After=network.target
+
+[Service]
+Type=simple
+User=avalii
+WorkingDirectory=/home/avalii/moltbot
+ExecStart=/usr/bin/python3 /home/avalii/moltbot/alii_optimizer.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/avalii/moltbot/optimizer.log
+StandardError=append:/home/avalii/moltbot/optimizer.log
+
+[Install]
+WantedBy=multi-user.target

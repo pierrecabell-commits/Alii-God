@@ -1,0 +1,17 @@
+[Unit]
+Description=Alii Revenue Agent - GitHub monitor + Contact form
+After=network.target
+
+[Service]
+Type=simple
+User=avalii
+WorkingDirectory=/home/avalii/moltbot
+EnvironmentFile=/home/avalii/moltbot/.env
+ExecStart=/usr/bin/python3 /home/avalii/moltbot/revenue_agent.py --monitor --serve
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:/home/avalii/moltbot/logs/revenue_agent.log
+StandardError=append:/home/avalii/moltbot/logs/revenue_agent.log
+
+[Install]
+WantedBy=default.target
