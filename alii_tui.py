@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
 """
-alii_tui.py — Unified Alii Terminal Hub
+alii_tui.py — Unified Alii Terminal Hub  v3.0
 
-The single entry point for all things Alii.
-Type "alii" from Precision or MacBook to launch.
+The single entry point for all things Alii. Type "alii" to launch.
 
 Panels:
-  [1] Chat / AI  — streaming chat to LiteLLM/Ollama (Ollama-first, zero Claude tokens)
+  [0] Todos      — autonomous task center, Alii can execute/ask/track
+  [1] Chat / AI  — intelligent streaming chat (Ollama-first, tool-aware)
   [2] Agents     — all agent status, start/stop/restart
   [3] Cluster    — live node stats for all 4 nodes
-  [4] Social     — MixPost queue + social agent status
-  [5] Systems    — disk, docker, ollama models, ray, logs
-  [6] Config     — edit .env settings, model tiers
-  [7] Help       — full instruction manual
+  [4] Camera     — live Jetson camera feed (ASCII art, auto-refresh)
+  [5] Social     — MixPost queue + social agent status
+  [6] Systems    — disk, docker, ollama models, ray, logs
+  [7] Config     — edit .env settings, model tiers
+  [8] Help       — full instruction manual
 
 Author: Alii / Pierre Cabell
 """
 
 from __future__ import annotations
-import asyncio, json, os, subprocess, sys, time
+import asyncio, json, os, re, subprocess, sys, time, textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 # ── Ensure venv is active ──────────────────────────────────────────────────────
-WORKDIR = Path("/home/avalii/moltbot")
+WORKDIR     = Path("/home/avalii/moltbot")
 VENV_PYTHON = WORKDIR / "venv" / "bin" / "python3"
 
 if sys.executable != str(VENV_PYTHON) and VENV_PYTHON.exists():
@@ -54,29 +55,100 @@ DATA_DIR    = WORKDIR / "data"
 LOGS_DIR    = WORKDIR / "logs"
 ENV_FILE    = WORKDIR / ".env"
 AGENTS_DIR  = WORKDIR / "agents"
+TODOS_FILE  = DATA_DIR / "owner_todos.json"
 MIXPOST_URL = "http://100.75.36.73:9101"
+JETSON_IP   = "100.87.137.61"
+CAM_PORT    = 8765
 
-PANEL_IDS = ["panel-chat", "panel-agents", "panel-cluster",
-             "panel-social", "panel-systems", "panel-config", "panel-help"]
+PANEL_IDS = [
+    "panel-todos", "panel-chat", "panel-agents", "panel-cluster",
+    "panel-camera", "panel-social", "panel-systems", "panel-config", "panel-help"
+]
 
 MENU_ITEMS = [
-    ("[1] Chat / AI",     "panel-chat"),
-    ("[2] Agents",        "panel-agents"),
-    ("[3] Cluster",       "panel-cluster"),
-    ("[4] Social",        "panel-social"),
-    ("[5] Systems",       "panel-systems"),
-    ("[6] Config",        "panel-config"),
-    ("[7] Help / Manual", "panel-help"),
+    ("[0] ◈ Todos",        "panel-todos"),
+    ("[1] Chat / AI",      "panel-chat"),
+    ("[2] Agents",         "panel-agents"),
+    ("[3] Cluster",        "panel-cluster"),
+    ("[4] 📷 Camera",      "panel-camera"),
+    ("[5] Social",         "panel-social"),
+    ("[6] Systems",        "panel-systems"),
+    ("[7] Config",         "panel-config"),
+    ("[8] Help / Manual",  "panel-help"),
 ]
 
 ALII_BANNER = """[bold cyan]
-  ╔═══════════════════════════════════════╗
-  ║    ◈  A L I I  —  Sovereign AI  ◈    ║
-  ║    Precision Cluster · Akron, OH      ║
-  ╚═══════════════════════════════════════╝[/bold cyan]
+  ╔═══════════════════════════════════════════════════════╗
+  ║     ◈  A L I I  —  Sovereign AI  v3.0  ◈             ║
+  ║     Precision Cluster · Akron, OH                     ║
+  ╚═══════════════════════════════════════════════════════╝[/bold cyan]
 [dim]  Routing: Ollama-first · Claude: /escalate only[/dim]
-[dim]  Type your message below. Commands: /shell /memory /agents /status /clear[/dim]
+[dim]  Tool-aware chat: mention camera/todo/status/shell — I route automatically[/dim]
+[dim]  Commands: /shell /memory /agents /status /todos /camera /clear /escalate[/dim]
 """
+
+PRIORITY_COLORS = {"critical": "red", "high": "yellow", "medium": "cyan", "low": "dim"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Helpers ───────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+def load_todos() -> list[dict]:
+    try:
+        raw = TODOS_FILE.read_text()
+        data = json.loads(raw)
+        return data if isinstance(data, list) else data.get("todos", [])
+    except Exception:
+        return []
+
+def save_todos(todos: list[dict]):
+    TODOS_FILE.write_text(json.dumps(todos, indent=2))
+
+def mark_todo_done(todo_id: str):
+    todos = load_todos()
+    for t in todos:
+        if t.get("id", "") == todo_id:
+            t["status"] = "done"
+            t["completed_at"] = datetime.now(timezone.utc).isoformat()
+    save_todos(todos)
+
+def todo_priority_rank(t: dict) -> int:
+    return {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(t.get("priority", "low"), 3)
+
+def jpeg_to_ascii(data: bytes, width: int = 72, height: int = 28) -> str:
+    """Convert JPEG bytes to ASCII art string using Pillow."""
+    try:
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(data)).convert("L")
+        img = img.resize((width, height))
+        chars = " ·-+*%#@"
+        lines = []
+        pixels = list(img.getdata())
+        for y in range(height):
+            row = ""
+            for x in range(width):
+                px = pixels[y * width + x]
+                idx = int(px / 256 * len(chars))
+                row += chars[min(idx, len(chars)-1)]
+            lines.append(row)
+        return "\n".join(lines)
+    except Exception as e:
+        return f"[ASCII art failed: {e}]"
+
+def fetch_camera_snapshot() -> tuple[bytes, str]:
+    """Fetch JPEG from Jetson camera service. Returns (bytes, error_msg)."""
+    import urllib.request
+    try:
+        url = f"http://{JETSON_IP}:{CAM_PORT}/snapshot"
+        with urllib.request.urlopen(url, timeout=8) as r:
+            data = r.read()
+            if len(data) > 1000:
+                return data, ""
+            return b"", f"snapshot too small ({len(data)} bytes)"
+    except Exception as e:
+        return b"", str(e)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -96,7 +168,6 @@ class AliiHeader(Widget):
 
     def on_mount(self):
         self.set_interval(10, self._refresh_header)
-        # Do first refresh asap
         self.set_timer(0.5, self._refresh_header)
 
     def update_state(self, state: ClusterState):
@@ -104,7 +175,6 @@ class AliiHeader(Widget):
         self._render_header()
 
     def _refresh_header(self):
-        # Get state from app poller
         app = self.app
         if hasattr(app, "_cluster_state") and app._cluster_state:
             self._state = app._cluster_state
@@ -116,13 +186,12 @@ class AliiHeader(Widget):
 
         if s is None:
             self.query_one("#header-line1", Static).update(
-                f"[bold cyan]◈ ALII[/bold cyan]  [dim]initializing cluster scan...[/dim]  [dim]{now}[/dim]"
+                f"[bold cyan]◈ ALII v3[/bold cyan]  [dim]initializing cluster scan...[/dim]  [dim]{now}[/dim]"
             )
             return
 
         p = s.precision
 
-        # Node status
         def node_badge(name: str) -> str:
             node = s.nodes.get(name)
             if not node:
@@ -132,35 +201,35 @@ class AliiHeader(Widget):
             color = node.temp_color
             return f"[{color}]●{name.upper()}:{node.temp_c:.0f}°[/{color}]"
 
-        # Precision badge
         p_color = p.temp_color
         prec_badge = (
             f"[bold {p_color}]●PRECISION:{p.temp_c:.0f}°C[/bold {p_color}]"
             f"[dim] L:{p.load_1m} RAM:{p.ram_used_gb}/{p.ram_total_gb}G[/dim]"
         )
-
         nodes_str = "  ".join(node_badge(n) for n in ["xps", "nuc", "jetson"])
 
-        # Models
         models = s.ollama_models[:4]
         models_str = " ".join(f"[green]{m}✓[/green]" for m in models) if models else "[dim]none[/dim]"
 
-        # Services
         svc_color = "green" if s.services_up == s.services_total else "yellow"
         svc_str = f"[{svc_color}]{s.services_up}/{s.services_total}✓[/{svc_color}]"
 
-        # Todos
-        todo_color = "yellow" if s.todo_count > 0 else "dim"
-        todo_str = f"[{todo_color}]{s.todo_count} todo{'s' if s.todo_count != 1 else ''}[/{todo_color}]"
+        todos = load_todos()
+        pending = [t for t in todos if t.get("status", "pending") == "pending"]
+        critical = [t for t in pending if t.get("priority") == "critical"]
+        todo_color = "red" if critical else ("yellow" if pending else "dim")
+        todo_str = f"[{todo_color}]{'⚠ ' if critical else ''}{len(pending)} todo{'s' if len(pending) != 1 else ''}[/{todo_color}]"
+
+        cam_badge = "[green]📷CAM[/green]" if getattr(self.app, "_cam_ok", False) else "[dim]📷?[/dim]"
 
         self.query_one("#header-line1", Static).update(
-            f"[bold cyan]◈ ALII[/bold cyan]  {prec_badge}  {nodes_str}"
+            f"[bold cyan]◈ ALII v3[/bold cyan]  {prec_badge}  {nodes_str}  {cam_badge}"
         )
         self.query_one("#header-line2", Static).update(
-            f"[dim]Models:[/dim] {models_str}  [dim]│[/dim]  [dim]Claude: /escalate only[/dim]  [dim]│[/dim]  [dim]LiteLLM/Ollama: default[/dim]"
+            f"[dim]Models:[/dim] {models_str}  [dim]│[/dim]  [dim]Claude:/escalate[/dim]  [dim]│[/dim]  [dim]LiteLLM/Ollama:default[/dim]"
         )
         self.query_one("#header-line3", Static).update(
-            f"[dim]Services:[/dim] {svc_str}  [dim]│[/dim]  {todo_str}  [dim]│[/dim]  [dim]{now}[/dim]"
+            f"[dim]Svcs:[/dim] {svc_str}  [dim]│[/dim]  {todo_str}  [dim]│[/dim]  [dim]{now}[/dim]  [dim]│  0=Todos 1=Chat 4=Cam[/dim]"
         )
 
 
@@ -185,9 +254,8 @@ class AliiMenu(Widget):
         yield lv
         yield Static("")
         yield Static("  [dim]─────────────────[/dim]")
-        yield Static("  [dim][Q] Quit[/dim]")
-        yield Static("  [dim][R] Refresh[/dim]")
-        yield Static("  [dim][?] Help[/dim]")
+        yield Static("  [dim][Q] Quit  [R] Refresh[/dim]")
+        yield Static("  [dim][?] Help  [0] Todos[/dim]")
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if event.item.id:
@@ -196,20 +264,346 @@ class AliiMenu(Widget):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ── Todos Panel ───────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TodosPanel(Widget):
+    """
+    Autonomous task center. Alii can execute tasks, ask for info, or flag for Pierre.
+    Panel [0] — most prominent, always accessible.
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="panel-todos"):
+            yield Static(
+                "[bold cyan]◈ TODOS[/bold cyan]  [dim]Autonomous task center — Alii executes what he can, asks for the rest[/dim]",
+                id="todos-header"
+            )
+            yield Static("", id="todos-summary")
+            table = DataTable(id="todos-table", cursor_type="row")
+            table.add_columns("Pri", "Category", "Title", "Status", "Auto?")
+            yield table
+            yield Static("", id="todos-detail")
+            with Horizontal():
+                yield Button("↻ Refresh", id="btn-todos-refresh", variant="primary")
+                yield Button("⚡ Execute Selected", id="btn-todos-execute", variant="success")
+                yield Button("✓ Done Selected", id="btn-todos-done")
+                yield Button("🤖 Auto-run All", id="btn-todos-autorun")
+                yield Button("+ Add Todo", id="btn-todos-add")
+            yield RichLog(id="todos-exec-log", wrap=True, markup=True, max_lines=20)
+
+    def on_mount(self):
+        self.set_timer(0.3, self._populate)
+        self.set_interval(60, self._populate)
+
+    def _populate(self):
+        todos = load_todos()
+        pending = sorted(
+            [t for t in todos if t.get("status", "pending") == "pending"],
+            key=todo_priority_rank
+        )
+        done_count = len([t for t in todos if t.get("status") == "done"])
+
+        table = self.query_one("#todos-table", DataTable)
+        table.clear()
+
+        self._todo_ids = []
+        for t in pending:
+            pri   = t.get("priority", "?")
+            cat   = t.get("category", "?")
+            title = t.get("title", "?")[:55]
+            status = t.get("status", "pending")
+            can_auto = "✓ AUTO" if t.get("can_alii_execute") else ("❓ needs info" if t.get("needs_info") else "— Pierre")
+            color = PRIORITY_COLORS.get(pri, "white")
+            table.add_row(
+                Text.from_markup(f"[{color}]{pri.upper()[:4]}[/{color}]"),
+                cat, title,
+                Text.from_markup(f"[{'green' if status == 'done' else 'yellow'}]{status}[/{'green' if status == 'done' else 'yellow'}]"),
+                Text.from_markup(f"[{'green' if t.get('can_alii_execute') else 'dim'}]{can_auto}[/{'green' if t.get('can_alii_execute') else 'dim'}]")
+            )
+            self._todo_ids.append(t.get("id"))
+
+        crit = len([t for t in pending if t.get("priority") == "critical"])
+        hi   = len([t for t in pending if t.get("priority") == "high"])
+        self.query_one("#todos-summary", Static).update(
+            f"[red]{crit} critical[/red]  [yellow]{hi} high[/yellow]  "
+            f"[cyan]{len(pending)} total pending[/cyan]  [dim]{done_count} done[/dim]  "
+            f"[green]{len([t for t in pending if t.get('can_alii_execute')])} Alii can auto-execute[/green]"
+        )
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        todos = load_todos()
+        pending = sorted(
+            [t for t in todos if t.get("status", "pending") == "pending"],
+            key=todo_priority_rank
+        )
+        idx = event.cursor_row
+        if idx < len(pending):
+            t = pending[idx]
+            steps = t.get("autonomous_steps", [])
+            needs = t.get("needs_info", [])
+            detail = f"[bold]{t.get('title')}[/bold]\n"
+            detail += f"[dim]{t.get('description','No description')}[/dim]\n"
+            if steps:
+                detail += f"\n[cyan]Alii can execute:[/cyan]\n"
+                for s in steps:
+                    detail += f"  [dim]$[/dim] {s}\n"
+            if needs:
+                detail += f"\n[yellow]Needs info from Pierre:[/yellow]\n"
+                for n in needs:
+                    detail += f"  [dim]?[/dim] {n}\n"
+            self.query_one("#todos-detail", Static).update(detail)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-todos-refresh":
+            self._populate()
+        elif event.button.id == "btn-todos-execute":
+            self._execute_selected()
+        elif event.button.id == "btn-todos-done":
+            self._mark_done_selected()
+        elif event.button.id == "btn-todos-autorun":
+            self._autorun_all()
+        elif event.button.id == "btn-todos-add":
+            self._show_add_prompt()
+
+    def _get_selected_todo(self) -> Optional[dict]:
+        table = self.query_one("#todos-table", DataTable)
+        idx = table.cursor_row
+        if idx is None:
+            return None
+        todos = load_todos()
+        pending = sorted(
+            [t for t in todos if t.get("status", "pending") == "pending"],
+            key=todo_priority_rank
+        )
+        if idx < len(pending):
+            return pending[idx]
+        return None
+
+    @work(thread=True)
+    def _execute_selected(self):
+        log = self.query_one("#todos-exec-log", RichLog)
+        t = self._get_selected_todo()
+        if not t:
+            log.write("[yellow]Select a todo row first.[/yellow]")
+            return
+
+        steps = t.get("autonomous_steps", [])
+        if not steps:
+            log.write(f"[yellow]Todo '{t.get('title')}' has no autonomous steps defined.[/yellow]")
+            needs = t.get("needs_info", [])
+            if needs:
+                log.write("[cyan]Needs info:[/cyan]")
+                for n in needs:
+                    log.write(f"  ? {n}")
+            return
+
+        log.write(f"\n[bold cyan]⚡ Executing:[/bold cyan] {t.get('title')}")
+        all_ok = True
+        for step in steps:
+            log.write(f"[dim]$ {step}[/dim]")
+            try:
+                result = subprocess.run(
+                    step, shell=True, capture_output=True, text=True,
+                    timeout=60, cwd=str(WORKDIR)
+                )
+                out = (result.stdout + result.stderr).strip()[:300]
+                if result.returncode == 0:
+                    log.write(f"[green]✓ {out or '(done)'}[/green]")
+                else:
+                    log.write(f"[red]✗ {out or 'failed'}[/red]")
+                    all_ok = False
+            except subprocess.TimeoutExpired:
+                log.write("[red]✗ timed out[/red]")
+                all_ok = False
+            except Exception as e:
+                log.write(f"[red]✗ {e}[/red]")
+                all_ok = False
+
+        if all_ok:
+            mark_todo_done(t.get("id", ""))
+            log.write(f"[bold green]✓ Marked done: {t.get('title')}[/bold green]")
+            self._populate()
+        else:
+            log.write("[yellow]Some steps failed — todo NOT marked done. Review above.[/yellow]")
+
+    @work(thread=True)
+    def _autorun_all(self):
+        log = self.query_one("#todos-exec-log", RichLog)
+        todos = load_todos()
+        pending = [t for t in todos if t.get("status", "pending") == "pending" and t.get("can_alii_execute") and t.get("autonomous_steps")]
+        if not pending:
+            log.write("[dim]No auto-executable todos with defined steps found.[/dim]")
+            return
+
+        log.write(f"\n[bold cyan]🤖 Auto-running {len(pending)} executable todos...[/bold cyan]")
+        for t in pending:
+            log.write(f"\n[cyan]→ {t.get('title')}[/cyan]")
+            all_ok = True
+            for step in t.get("autonomous_steps", []):
+                log.write(f"[dim]$ {step}[/dim]")
+                try:
+                    r = subprocess.run(step, shell=True, capture_output=True, text=True, timeout=60, cwd=str(WORKDIR))
+                    out = (r.stdout + r.stderr).strip()[:200]
+                    if r.returncode == 0:
+                        log.write(f"[green]✓ {out or '(done)'}[/green]")
+                    else:
+                        log.write(f"[red]✗ {out}[/red]")
+                        all_ok = False
+                except Exception as e:
+                    log.write(f"[red]✗ {e}[/red]")
+                    all_ok = False
+            if all_ok:
+                mark_todo_done(t.get("id", ""))
+                log.write(f"[green]✓ Done[/green]")
+        log.write("\n[bold green]Auto-run complete.[/bold green]")
+        self._populate()
+
+    def _mark_done_selected(self):
+        t = self._get_selected_todo()
+        if t:
+            mark_todo_done(t.get("id", ""))
+            self.app.notify(f"✓ Marked done: {t.get('title','?')[:50]}")
+            self._populate()
+
+    def _show_add_prompt(self):
+        self.app.notify("Use /shell python3 agents/todo_agent.py add '<title>' in chat panel.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Camera Panel ──────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+class CameraPanel(Widget):
+    """Live Jetson camera feed displayed as ASCII art."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="panel-camera"):
+            with Horizontal():
+                yield Static("[bold cyan]◈ CAMERA[/bold cyan]  [dim]Jetson front camera · Auto-refresh 30s[/dim]", id="cam-header")
+                yield Static("", id="cam-status")
+            yield Static("", id="cam-ascii", markup=False)
+            yield Static("", id="cam-info")
+            with Horizontal():
+                yield Button("📸 Capture Now", id="btn-cam-snap", variant="primary")
+                yield Button("💾 Save Snapshot", id="btn-cam-save")
+                yield Button("📊 Camera Info", id="btn-cam-info")
+                yield Button("🔄 Restart Service", id="btn-cam-restart")
+
+    def on_mount(self):
+        self._fetch_and_display()
+        self.set_interval(30, self._fetch_and_display)
+
+    @work(thread=True)
+    def _fetch_and_display(self):
+        status_w = self.query_one("#cam-status", Static)
+        ascii_w  = self.query_one("#cam-ascii",  Static)
+        info_w   = self.query_one("#cam-info",   Static)
+
+        status_w.update("[yellow]fetching...[/yellow]")
+        data, err = fetch_camera_snapshot()
+
+        if err:
+            status_w.update(f"[red]✗ {err}[/red]")
+            ascii_w.update("[dim]Camera unavailable[/dim]")
+            self.app._cam_ok = False
+            return
+
+        ts = datetime.now().strftime("%H:%M:%S")
+        status_w.update(f"[green]✓ {len(data)//1024}KB · {ts}[/green]")
+        self.app._cam_ok = True
+
+        # Convert to ASCII
+        art = jpeg_to_ascii(data, width=80, height=32)
+        ascii_w.update(art)
+        info_w.update(f"[dim]Jetson {JETSON_IP}:{CAM_PORT}  JPEG {len(data)} bytes  {ts}[/dim]")
+
+        # Save latest snapshot
+        snap_dir = WORKDIR / "snapshots"
+        snap_dir.mkdir(exist_ok=True)
+        snap_path = snap_dir / "jetson_latest.jpg"
+        snap_path.write_bytes(data)
+
+    @work(thread=True)
+    def _save_snapshot(self):
+        data, err = fetch_camera_snapshot()
+        if err:
+            self.app.notify(f"Camera error: {err}", severity="error")
+            return
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = WORKDIR / "snapshots" / f"jetson_{ts}.jpg"
+        path.mkdir = path.parent.mkdir
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(data)
+        self.app.notify(f"Snapshot saved: snapshots/jetson_{ts}.jpg ({len(data)//1024}KB)")
+
+    @work(thread=True)
+    def _get_info(self):
+        import urllib.request
+        try:
+            with urllib.request.urlopen(f"http://{JETSON_IP}:{CAM_PORT}/info", timeout=5) as r:
+                info = json.loads(r.read())
+                self.app.notify(f"Camera info:\n{json.dumps(info, indent=2)[:400]}")
+        except Exception as e:
+            self.app.notify(f"Info fetch failed: {e}", severity="warning")
+
+    @work(thread=True)
+    def _restart_service(self):
+        result = subprocess.run(
+            ["ssh", "-i", "/home/avalii/.ssh/id_rsa", "-o", "BatchMode=yes",
+             "-o", "StrictHostKeyChecking=no",
+             f"avalii@{JETSON_IP}",
+             "sudo systemctl restart alii-camera && sleep 3 && curl -s http://localhost:8765/health"],
+            capture_output=True, text=True, timeout=20
+        )
+        if "ok" in result.stdout:
+            self.app.notify("✓ Camera service restarted on Jetson")
+            self._fetch_and_display()
+        else:
+            self.app.notify(f"Restart result: {result.stdout[:100]}", severity="warning")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-cam-snap":
+            self._fetch_and_display()
+        elif event.button.id == "btn-cam-save":
+            self._save_snapshot()
+        elif event.button.id == "btn-cam-info":
+            self._get_info()
+        elif event.button.id == "btn-cam-restart":
+            self._restart_service()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ── Chat Panel ────────────────────────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Tool detection patterns
+_TOOL_CAMERA  = re.compile(r'\b(camera|snapshot|photo|picture|feed|see|view|look|watching)\b', re.I)
+_TOOL_TODO    = re.compile(r'\b(todo|task|remind|pending|what.*need|what.*do|to.do)\b', re.I)
+_TOOL_STATUS  = re.compile(r'\b(status|cluster|nodes|temp|temperature|service|health)\b', re.I)
+_TOOL_SHELL   = re.compile(r'\b(run|execute|restart|start|stop|install|pull|git|systemctl|docker|pip)\b', re.I)
+_TOOL_MEMORY  = re.compile(r'\b(remember|memory|history|what.*said|recall|forget)\b', re.I)
+
+
 class ChatPanel(Widget):
-    """Streaming chat panel — routes to LiteLLM/Ollama."""
+    """
+    Intelligent streaming chat panel.
+    Detects intent → routes to Ollama/LiteLLM, tools, or Claude (/escalate).
+    All memory stored in SQLite + Qdrant for persistent context.
+    """
 
     DEFAULT_CSS = ""
 
     def compose(self) -> ComposeResult:
         with Vertical(id="panel-chat"):
             yield RichLog(id="chat-log", wrap=True, highlight=False, markup=True)
+            yield Static("", id="chat-model-indicator")
             with Horizontal(id="chat-input-bar"):
                 yield Static("[bold cyan]alii ›[/bold cyan]", id="chat-prompt")
-                yield Input(placeholder="Type a message... (/shell /memory /agents /status /clear /escalate)", id="chat-input")
+                yield Input(
+                    placeholder="Ask anything... tool-aware routing. /shell /todos /camera /memory /escalate",
+                    id="chat-input"
+                )
 
     def on_mount(self):
         self.query_one("#chat-log", RichLog).write(ALII_BANNER)
@@ -226,31 +620,53 @@ class ChatPanel(Widget):
         log = self.query_one("#chat-log", RichLog)
         log.write(f"\n[bold cyan]You ›[/bold cyan] {prompt}")
 
-        # Built-in slash commands
-        if prompt.lower() == "/clear":
+        p = prompt.lower().strip()
+
+        # Slash commands — direct
+        if p == "/clear":
             log.clear()
             log.write(ALII_BANNER)
             return
+        if p == "/status":
+            self._show_status()
+            return
+        if p == "/memory":
+            self._show_memory()
+            return
+        if p == "/agents":
+            self._show_agents_list()
+            return
+        if p == "/todos":
+            self._show_todos_summary()
+            return
+        if p == "/camera":
+            self._show_camera_snap()
+            return
+        if p.startswith("/shell "):
+            self._run_shell(prompt[7:].strip())
+            return
+        if p == "/help":
+            self.app.show_panel("panel-help")
+            return
 
-        if prompt.lower() == "/status":
+        # Tool-aware routing — detect intent before hitting LLM
+        if _TOOL_CAMERA.search(prompt) and not _TOOL_SHELL.search(prompt):
+            log.write("[dim]  → tool: camera snapshot[/dim]")
+            self._show_camera_snap()
+            # Also answer via LLM
+            self._stream_response(prompt)
+            return
+
+        if _TOOL_TODO.search(prompt) and len(prompt) < 100:
+            self._show_todos_summary()
+            return
+
+        if _TOOL_STATUS.search(prompt) and len(prompt) < 80:
             self._show_status()
             return
 
-        if prompt.lower() == "/memory":
+        if _TOOL_MEMORY.search(prompt) and len(prompt) < 60:
             self._show_memory()
-            return
-
-        if prompt.lower() == "/agents":
-            self._show_agents_list()
-            return
-
-        if prompt.lower().startswith("/shell "):
-            cmd = prompt[7:].strip()
-            self._run_shell(cmd)
-            return
-
-        if prompt.lower() == "/help":
-            self.app.show_panel("panel-help")
             return
 
         # Route to LLM
@@ -258,11 +674,13 @@ class ChatPanel(Widget):
 
     @work(exclusive=False)
     async def _stream_response(self, prompt: str):
-        log = self.query_one("#chat-log", RichLog)
+        log  = self.query_one("#chat-log",             RichLog)
+        ind  = self.query_one("#chat-model-indicator", Static)
         backend = get_backend()
         model, reason = classify_prompt(prompt)
 
-        log.write(f"[dim]  → routing to [cyan]{model}[/cyan] ({reason})[/dim]")
+        log.write(f"[dim]  → [cyan]{model}[/cyan] ({reason})[/dim]")
+        ind.update(f"[dim]  model: {model} | {reason}[/dim]")
         log.write("[bold green]Alii ›[/bold green] ", end=False)
 
         try:
@@ -270,9 +688,13 @@ class ChatPanel(Widget):
             async for chunk in backend.stream(prompt):
                 log.write(chunk, end=False, markup=False)
                 full.append(chunk)
-            log.write("")  # newline after stream ends
+            log.write("")
+            # Persist to SQLite memory
+            self._save_to_memory(prompt, "".join(full), model)
         except Exception as e:
             log.write(f"\n[red]Error: {e}[/red]")
+        finally:
+            ind.update("")
 
     @work(thread=True)
     def _run_shell(self, cmd: str):
@@ -281,7 +703,7 @@ class ChatPanel(Widget):
         try:
             result = subprocess.run(
                 cmd, shell=True, capture_output=True, text=True,
-                timeout=30, cwd=str(WORKDIR)
+                timeout=60, cwd=str(WORKDIR)
             )
             out = result.stdout.strip()
             err = result.stderr.strip()
@@ -292,9 +714,23 @@ class ChatPanel(Widget):
             if not out and not err:
                 log.write("[dim](no output)[/dim]")
         except subprocess.TimeoutExpired:
-            log.write("[red]Command timed out (30s)[/red]")
+            log.write("[red]Command timed out (60s)[/red]")
         except Exception as e:
             log.write(f"[red]Error: {e}[/red]")
+
+    @work(thread=True)
+    def _show_camera_snap(self):
+        log = self.query_one("#chat-log", RichLog)
+        log.write("\n[bold cyan]── Jetson Camera ──[/bold cyan]")
+        data, err = fetch_camera_snapshot()
+        if err:
+            log.write(f"[red]Camera error: {err}[/red]")
+            log.write(f"[dim]Service: http://{JETSON_IP}:{CAM_PORT}/snapshot[/dim]")
+            return
+        art = jpeg_to_ascii(data, width=72, height=22)
+        ts = datetime.now().strftime("%H:%M:%S")
+        log.write(f"[dim]{art}[/dim]")
+        log.write(f"[dim]📷 {len(data)//1024}KB JPEG · {ts} · Panel [4] for full view[/dim]")
 
     def _show_status(self):
         log = self.query_one("#chat-log", RichLog)
@@ -308,9 +744,8 @@ class ChatPanel(Widget):
         for name, node in s.nodes.items():
             status = f"[green]ONLINE[/green] {node.temp_c}°C L:{node.load_1m}" if node.online else "[red]OFFLINE[/red]"
             log.write(f"  {name.upper()}: {status}")
-        log.write(f"Services: {s.services_up}/{s.services_total} up")
-        log.write(f"Todos: {s.todo_count} pending")
-        log.write(f"Ollama models: {', '.join(s.ollama_models) or 'none'}")
+        log.write(f"Services: {s.services_up}/{s.services_total} up | Todos: {s.todo_count} pending")
+        log.write(f"Ollama: {', '.join(s.ollama_models) or 'none'}")
 
     def _show_memory(self):
         log = self.query_one("#chat-log", RichLog)
@@ -320,17 +755,32 @@ class ChatPanel(Widget):
             if db.exists():
                 conn = sqlite3.connect(str(db))
                 rows = conn.execute(
-                    "SELECT role, substr(content,1,120), backend FROM episodic ORDER BY id DESC LIMIT 8"
+                    "SELECT role, substr(content,1,120), backend FROM episodic ORDER BY id DESC LIMIT 10"
                 ).fetchall()
                 conn.close()
-                log.write("\n[bold cyan]── Recent Memory (last 8) ──[/bold cyan]")
+                log.write("\n[bold cyan]── Recent Memory (last 10) ──[/bold cyan]")
                 for role, content, backend in rows:
                     color = "cyan" if role == "user" else "green"
                     log.write(f"[{color}]{role}[/{color}] [{backend}]: {content}...")
             else:
-                log.write("[dim]Memory DB not found[/dim]")
+                log.write("[dim]Memory DB not found — chat history not yet persisted[/dim]")
         except Exception as e:
             log.write(f"[red]Memory error: {e}[/red]")
+
+    def _show_todos_summary(self):
+        log = self.query_one("#chat-log", RichLog)
+        todos = load_todos()
+        pending = sorted(
+            [t for t in todos if t.get("status", "pending") == "pending"],
+            key=todo_priority_rank
+        )
+        log.write(f"\n[bold cyan]── Todos ({len(pending)} pending) ──[/bold cyan]")
+        for t in pending[:15]:
+            color = PRIORITY_COLORS.get(t.get("priority", "low"), "white")
+            auto  = "[green]AUTO[/green]" if t.get("can_alii_execute") else "[dim]Pierre[/dim]"
+            log.write(f"  [{color}]{t.get('priority','?').upper()[:4]}[/{color}] {auto}  {t.get('title','?')}")
+        if len(pending) > 15:
+            log.write(f"  [dim]... and {len(pending)-15} more. Press [0] for full view.[/dim]")
 
     def _show_agents_list(self):
         log = self.query_one("#chat-log", RichLog)
@@ -339,6 +789,29 @@ class ChatPanel(Widget):
         for a in agents:
             if not a.name.startswith("_"):
                 log.write(f"  [cyan]{a.stem}[/cyan]")
+
+    def _save_to_memory(self, user_msg: str, alii_msg: str, model: str):
+        """Persist conversation to SQLite episodic memory."""
+        try:
+            import sqlite3
+            db_path = WORKDIR / "memory" / "alii_core.db"
+            db_path.parent.mkdir(exist_ok=True)
+            conn = sqlite3.connect(str(db_path))
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS episodic (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT, role TEXT, content TEXT, backend TEXT
+                )
+            """)
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute("INSERT INTO episodic (ts, role, content, backend) VALUES (?,?,?,?)",
+                         (now, "user", user_msg, model))
+            conn.execute("INSERT INTO episodic (ts, role, content, backend) VALUES (?,?,?,?)",
+                         (now, "assistant", alii_msg, model))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass  # Memory failure is non-fatal
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -357,7 +830,7 @@ class AgentsPanel(Widget):
             with Horizontal():
                 yield Button("↻ Refresh", id="btn-agents-refresh", variant="primary")
                 yield Button("▶ Run Overhaul Tasks", id="btn-run-overhaul")
-                yield Button("📋 View Todos", id="btn-view-todos")
+                yield Button("📋 View Todos → [0]", id="btn-view-todos")
 
     def on_mount(self):
         self.set_timer(0.3, self._populate_agents)
@@ -366,19 +839,17 @@ class AgentsPanel(Widget):
         table = self.query_one("#agents-table", DataTable)
         table.clear()
 
-        # Port-based service detection
         import socket
         service_ports = {
             "alfred": 7000, "litellm_proxy": 4000, "alii_core": 8000,
             "alii_ui": 8001, "visionclaw_bridge": 7030,
         }
-
         agents = sorted(AGENTS_DIR.glob("*.py"))
         descriptions = {
             "todo_agent":       "Task queue & manual action tracking",
             "account_agent":    "Platform account management (10 platforms)",
             "social_agent":     "Brand presence & content publishing",
-            "ntfy_status":      "Cluster health notifications",
+            "ntfy_status":      "Cluster health + todo digest notifications",
             "ntfy_command_listener": "Two-way ntfy command bridge",
             "security_agent":   "Network intrusion detection",
             "money_agent":      "Revenue tracking & crypto monitoring",
@@ -386,13 +857,14 @@ class AgentsPanel(Widget):
             "law_agent":        "Legal compliance & IP protection",
             "hardware_agent":   "Thermal management & fan control",
             "camera_agent":     "RTSP camera monitoring",
+            "jetson_camera_agent": "Jetson edge camera (8765)",
             "imessage_bridge":  "macOS iMessage integration",
             "mac_controller":   "Remote macOS control via HTTP",
             "revenue_tracker":  "Multi-stream revenue monitoring",
             "email_agent":      "Email automation",
             "crypto_agent":     "Cryptocurrency portfolio",
             "media_agent":      "Media content management",
-            "pr_agent":         "Pull request automation",
+            "pr_agent":         "Pre-commit hook — blocks sensitive data",
             "visionclaw_bridge":"Ray-Ban vision → OpenClaw",
             "iphone_presence":  "iPhone location tracking",
             "macbook_presence": "MacBook presence detection",
@@ -404,25 +876,17 @@ class AgentsPanel(Widget):
             name = agent_path.stem
             size = f"{agent_path.stat().st_size // 1024}KB"
             desc = descriptions.get(name, "—")
-
-            # Check if there's a running process for this agent
             try:
-                result = subprocess.run(
-                    ["pgrep", "-f", agent_path.name],
-                    capture_output=True, text=True
-                )
+                result = subprocess.run(["pgrep", "-f", agent_path.name], capture_output=True, text=True)
                 running = result.returncode == 0
             except Exception:
                 running = False
-
-            # Check service ports
             if name in service_ports:
                 try:
                     with socket.create_connection(("127.0.0.1", service_ports[name]), timeout=0.5):
                         running = True
                 except Exception:
                     pass
-
             status = "[green]● running[/green]" if running else "[dim]○ idle[/dim]"
             table.add_row(name, Text.from_markup(status), size, desc)
 
@@ -432,35 +896,16 @@ class AgentsPanel(Widget):
         elif event.button.id == "btn-run-overhaul":
             self._run_overhaul()
         elif event.button.id == "btn-view-todos":
-            self._show_todos()
+            self.app.show_panel("panel-todos")
 
     @work(thread=True)
     def _run_overhaul(self):
         script = WORKDIR / "scripts" / "alii_overhaul_tasks.py"
         if script.exists():
-            subprocess.Popen(
-                [sys.executable, str(script)],
-                cwd=str(WORKDIR)
-            )
+            subprocess.Popen([sys.executable, str(script)], cwd=str(WORKDIR))
             self.app.notify("Overhaul tasks started. Check ntfy for results.")
         else:
             self.app.notify("scripts/alii_overhaul_tasks.py not found", severity="error")
-
-    def _show_todos(self):
-        try:
-            data = json.loads((DATA_DIR / "owner_todos.json").read_text())
-            todos = data if isinstance(data, list) else data.get("todos", [])
-            pending = [t for t in todos if t.get("status", "pending") == "pending"]
-            if pending:
-                lines = "\n".join(
-                    f"[{t.get('priority','?')}] {t.get('title','?')}"
-                    for t in pending[:15]
-                )
-                self.app.notify(f"{len(pending)} pending todos:\n{lines[:300]}")
-            else:
-                self.app.notify("No pending todos!")
-        except Exception as e:
-            self.app.notify(f"Could not load todos: {e}", severity="warning")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -495,42 +940,34 @@ class ClusterPanel(Widget):
     def _render_cluster(self, s: ClusterState):
         table = self.query_one("#cluster-table", DataTable)
         table.clear()
-
         p = s.precision
-        p_color = p.temp_color
+        p_color  = p.temp_color
         p_status = Text.from_markup(f"[{p_color}]● ONLINE[/{p_color}]")
         p_temp   = Text.from_markup(f"[{p_color}]{p.temp_c}°C[/{p_color}]")
         p_load   = Text.from_markup(f"{'[yellow]' if p.load_pct > 70 else ''}{p.load_1m}{'[/yellow]' if p.load_pct > 70 else ''}")
         p_ram    = f"{p.ram_used_gb}/{p.ram_total_gb}GB"
-
-        # Key services summary
-        up_svcs = [k for k, v in s.services.items() if v and k not in ("jetson-ollama",)][:4]
-        p_svcs  = ", ".join(up_svcs) or "—"
-
+        up_svcs  = [k for k, v in s.services.items() if v and k not in ("jetson-ollama",)][:4]
+        p_svcs   = ", ".join(up_svcs) or "—"
         table.add_row("PRECISION (head)", "100.75.36.73", p_status, p_temp, p_load, p_ram, p_svcs)
-
         for name, node in s.nodes.items():
             if node.online:
-                color = node.temp_color
+                color  = node.temp_color
                 status = Text.from_markup(f"[{color}]● ONLINE[/{color}]")
                 temp   = Text.from_markup(f"[{color}]{node.temp_c}°C[/{color}]")
                 load   = str(node.load_1m)
                 ram    = f"{node.ram_used_mb}/{node.ram_total_mb}MB"
-                svcs   = "tinyllama" if name == "jetson" else "ray-worker"
+                svcs   = "cam:8765 tinyllama" if name == "jetson" else "ray-worker"
             else:
                 status = Text.from_markup("[red]● OFFLINE[/red]")
                 temp   = Text.from_markup("[dim]—[/dim]")
-                load   = "—"
-                ram    = "—"
-                svcs   = "—"
+                load   = "—"; ram = "—"; svcs = "—"
             table.add_row(name.upper(), node.ip, status, temp, load, ram, svcs)
 
-        # Models info
         models_str = "  ".join(f"[green]{m}[/green]" for m in s.ollama_models) if s.ollama_models else "[dim]none loaded[/dim]"
         self.query_one("#cluster-models", Static).update(
-            f"\n[dim]Ollama models on Precision:[/dim] {models_str}\n"
-            f"[dim]Ray nodes:[/dim] [cyan]{s.ray_nodes}[/cyan]  "
-            f"[dim]Services:[/dim] [{'green' if s.services_up == s.services_total else 'yellow'}]{s.services_up}/{s.services_total}[/{'green' if s.services_up == s.services_total else 'yellow'}]"
+            f"\n[dim]Ollama:[/dim] {models_str}  [dim]│[/dim]  "
+            f"[dim]Ray:[/dim] [cyan]{s.ray_nodes}[/cyan]  [dim]│[/dim]  "
+            f"[dim]Svcs:[/dim] [{'green' if s.services_up == s.services_total else 'yellow'}]{s.services_up}/{s.services_total}[/{'green' if s.services_up == s.services_total else 'yellow'}]"
         )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -548,14 +985,12 @@ class ClusterPanel(Widget):
             [sys.executable, str(WORKDIR / "cluster_scan.py")],
             capture_output=True, text=True, timeout=60, cwd=str(WORKDIR)
         )
-        out = (result.stdout + result.stderr)[:500]
-        self.app.notify(f"Diagnostics:\n{out}")
+        self.app.notify(f"Diagnostics:\n{(result.stdout + result.stderr)[:500]}")
 
     def _show_inventory(self):
         try:
             inv = json.loads((DATA_DIR / "system_inventory.json").read_text())
-            summary = json.dumps(inv, indent=2)[:600]
-            self.app.notify(f"Inventory:\n{summary}")
+            self.app.notify(f"Inventory:\n{json.dumps(inv, indent=2)[:600]}")
         except Exception as e:
             self.app.notify(f"Inventory error: {e}", severity="warning")
 
@@ -572,7 +1007,7 @@ class SocialPanel(Widget):
             yield Static("[bold cyan]◈ SOCIAL[/bold cyan]  [dim]MixPost · Content Engine · Account Manager[/dim]", id="social-header")
             yield Static(
                 f"\n[bold]MixPost Admin:[/bold]  [link={MIXPOST_URL}][cyan]{MIXPOST_URL}[/cyan][/link]\n"
-                f"[dim]Access this URL from any device on Tailscale (MacBook, iPhone, etc.)[/dim]\n",
+                f"[dim]Access from any Tailscale device (MacBook, iPhone, etc.)[/dim]\n",
                 id="mixpost-url"
             )
             table = DataTable(id="social-table")
@@ -589,8 +1024,6 @@ class SocialPanel(Widget):
     def _populate_social(self):
         table = self.query_one("#social-table", DataTable)
         table.clear()
-
-        # Read accounts registry if available
         platforms = ["Twitter/X", "LinkedIn", "Reddit", "GitHub", "Ko-fi",
                      "Gumroad", "ProductHunt", "Dev.to", "MixPost"]
         try:
@@ -599,14 +1032,10 @@ class SocialPanel(Widget):
                 registry = json.loads(reg_file.read_text())
                 for p, info in registry.items():
                     status = "[green]active[/green]" if info.get("active") else "[dim]inactive[/dim]"
-                    posts  = str(info.get("scheduled_posts", 0))
-                    last   = info.get("last_activity", "—")[:20]
-                    table.add_row(p, Text.from_markup(status), posts, last)
+                    table.add_row(p, Text.from_markup(status), str(info.get("scheduled_posts", 0)), info.get("last_activity", "—")[:20])
                 return
         except Exception:
             pass
-
-        # Fallback: just list known platforms
         for p in platforms:
             table.add_row(p, Text.from_markup("[dim]—[/dim]"), "—", "—")
 
@@ -623,8 +1052,7 @@ class SocialPanel(Widget):
         try:
             log_file = LOGS_DIR / "accounts_status.log"
             if log_file.exists():
-                lines = log_file.read_text().splitlines()[-10:]
-                self.app.notify("\n".join(lines))
+                self.app.notify("\n".join(log_file.read_text().splitlines()[-10:]))
             else:
                 self.app.notify("No account status log found.")
         except Exception as e:
@@ -643,19 +1071,19 @@ class SystemsPanel(Widget):
             with TabbedContent():
                 with TabPane("💾 Disk", id="tab-disk"):
                     yield RichLog(id="log-disk", wrap=False, markup=True)
-                    yield Button("↻ Refresh Disk", id="btn-disk-refresh")
+                    yield Button("↻ Refresh", id="btn-disk-refresh")
                 with TabPane("🐳 Docker", id="tab-docker"):
                     yield RichLog(id="log-docker", wrap=False, markup=True)
-                    yield Button("↻ Refresh Docker", id="btn-docker-refresh")
+                    yield Button("↻ Refresh", id="btn-docker-refresh")
                 with TabPane("🤖 Ollama", id="tab-ollama"):
                     yield RichLog(id="log-ollama", wrap=False, markup=True)
-                    yield Button("↻ Refresh Ollama", id="btn-ollama-refresh")
+                    yield Button("↻ Refresh", id="btn-ollama-refresh")
                 with TabPane("⚡ Ray", id="tab-ray"):
                     yield RichLog(id="log-ray", wrap=False, markup=True)
-                    yield Button("↻ Refresh Ray", id="btn-ray-refresh")
+                    yield Button("↻ Refresh", id="btn-ray-refresh")
                 with TabPane("📋 Logs", id="tab-logs"):
                     yield RichLog(id="log-recent", wrap=True, markup=True)
-                    yield Button("↻ Refresh Logs", id="btn-logs-refresh")
+                    yield Button("↻ Refresh", id="btn-logs-refresh")
 
     def on_mount(self):
         self.set_timer(0.5, self._load_all)
@@ -676,8 +1104,6 @@ class SystemsPanel(Widget):
         for line in out.splitlines():
             if "Use%" in line or any(m in line for m in ["/mnt/", "/dev/", "tmpfs"]):
                 log.write(line)
-
-        # LVM info
         lvm = subprocess.run(["sudo", "-n", "lvs", "--noheadings", "-o", "lv_name,vg_name,lv_size"],
                               capture_output=True, text=True, timeout=5).stdout
         if lvm.strip():
@@ -712,8 +1138,6 @@ class SystemsPanel(Widget):
                     log.write(f"[green]{name:<40}[/green]  {size}  [dim]{digest}[/dim]")
         except Exception as e:
             log.write(f"[red]Ollama unreachable: {e}[/red]")
-
-        # Running models
         try:
             with urllib.request.urlopen("http://localhost:11434/api/ps", timeout=5) as r:
                 data = json.loads(r.read())
@@ -741,8 +1165,8 @@ class SystemsPanel(Widget):
     def _load_logs(self):
         log = self.query_one("#log-recent", RichLog)
         log.clear()
-        log.write("[bold cyan]Recent Log Activity (last 20 lines per key log)[/bold cyan]\n")
-        for log_name in ["alfred.log", "ntfy_status.log", "litellm.log", "todo_agent.log"]:
+        log.write("[bold cyan]Recent Log Activity[/bold cyan]\n")
+        for log_name in ["alfred.log", "ntfy_status.log", "litellm.log", "todo_agent.log", "jetson_camera.log"]:
             path = LOGS_DIR / log_name
             if path.exists():
                 lines = path.read_text().splitlines()[-8:]
@@ -778,6 +1202,8 @@ class ConfigPanel(Widget):
             yield Input(placeholder="LITELLM_MASTER_KEY value...", id="cfg-litellm-key", password=True)
             yield Static("\n[bold]Anthropic API Key[/bold] [dim](for /escalate only)[/dim]")
             yield Input(placeholder="ANTHROPIC_API_KEY value...", id="cfg-anthropic-key", password=True)
+            yield Static("\n[bold]Groq API Key[/bold] [dim](free fast inference — llama-3.3-70b)[/dim]")
+            yield Input(placeholder="GROQ_API_KEY value...", id="cfg-groq-key", password=True)
             yield Static("\n[bold]ntfy Topic[/bold]")
             yield Input(placeholder="alii-precision", id="cfg-ntfy-topic")
             yield Static("\n[bold]Default Model Tier[/bold] [dim](fast/smart/code/heavy)[/dim]")
@@ -787,6 +1213,7 @@ class ConfigPanel(Widget):
                 yield Button("💾 Save Config", id="btn-cfg-save", variant="primary")
                 yield Button("📋 Show Current .env", id="btn-cfg-show")
                 yield Button("🔄 Restart LiteLLM", id="btn-cfg-restart-litellm")
+                yield Button("🔄 Restart ntfy", id="btn-cfg-restart-ntfy")
             yield Static("", id="cfg-status")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -796,6 +1223,8 @@ class ConfigPanel(Widget):
             self._show_env()
         elif event.button.id == "btn-cfg-restart-litellm":
             self._restart_service("alii-router")
+        elif event.button.id == "btn-cfg-restart-ntfy":
+            self._restart_service("alii-ntfy-status")
 
     def _save_config(self):
         updates = {}
@@ -806,24 +1235,20 @@ class ConfigPanel(Widget):
             val = self.query_one(f"#{field_id}", Input).value.strip()
             if val:
                 updates[env_key] = val
-
-        # API keys — only update if non-empty (avoid clearing existing)
         for field_id, env_key in [
             ("cfg-litellm-key",   "LITELLM_MASTER_KEY"),
             ("cfg-anthropic-key", "ANTHROPIC_API_KEY"),
+            ("cfg-groq-key",      "GROQ_API_KEY"),
         ]:
             val = self.query_one(f"#{field_id}", Input).value.strip()
             if val:
                 updates[env_key] = val
-
         if not updates:
             self.query_one("#cfg-status", Static).update("[dim]No changes to save.[/dim]")
             return
-
         self._apply_env_updates(updates)
-        keys = ", ".join(updates.keys())
-        self.query_one("#cfg-status", Static).update(f"[green]✓ Saved: {keys}[/green]")
-        self.app.notify(f"Config saved: {keys}")
+        self.query_one("#cfg-status", Static).update(f"[green]✓ Saved: {', '.join(updates.keys())}[/green]")
+        self.app.notify(f"Config saved: {', '.join(updates.keys())}")
 
     @work(thread=True)
     def _apply_env_updates(self, updates: dict):
@@ -831,8 +1256,6 @@ class ConfigPanel(Widget):
             return
         content = ENV_FILE.read_text()
         for key, val in updates.items():
-            import re
-            # Replace existing key or append
             pattern = re.compile(rf'^{re.escape(key)}=.*$', re.MULTILINE)
             if pattern.search(content):
                 content = pattern.sub(f"{key}={val}", content)
@@ -843,7 +1266,6 @@ class ConfigPanel(Widget):
     def _show_env(self):
         try:
             lines = ENV_FILE.read_text().splitlines()
-            # Redact values for keys containing sensitive words
             safe_lines = []
             for l in lines:
                 if "=" in l:
@@ -886,7 +1308,6 @@ class HelpPanel(Widget):
         manual_path = WORKDIR / "docs" / "ALII_MANUAL.md"
         if manual_path.exists():
             content = manual_path.read_text()
-            # Simple markdown → rich rendering
             for line in content.splitlines():
                 if line.startswith("# "):
                     log.write(f"\n[bold cyan]{line[2:]}[/bold cyan]")
@@ -897,23 +1318,14 @@ class HelpPanel(Widget):
                 elif line.startswith("- ") or line.startswith("* "):
                     log.write(f"  [dim]•[/dim] {line[2:]}")
                 elif line.startswith("```"):
-                    pass  # skip code fences
+                    pass
                 else:
                     log.write(line)
         else:
             log.write("[bold cyan]◈ ALII MANUAL[/bold cyan]\n")
-            log.write("[dim]Manual file not found at docs/ALII_MANUAL.md[/dim]\n")
-            log.write("Quick reference:\n")
-            log.write("  [cyan]/shell <cmd>[/cyan]   — run any shell command")
-            log.write("  [cyan]/status[/cyan]         — show cluster status")
-            log.write("  [cyan]/memory[/cyan]         — show recent conversation memory")
-            log.write("  [cyan]/agents[/cyan]         — list all available agents")
-            log.write("  [cyan]/clear[/cyan]          — clear chat window")
-            log.write("  [cyan]/escalate <msg>[/cyan] — route to Claude API (uses tokens!)")
-            log.write("\nKeyboard shortcuts:")
-            log.write("  [cyan]1-7[/cyan]  — switch panels")
-            log.write("  [cyan]q[/cyan]    — quit")
-            log.write("  [cyan]r[/cyan]    — force cluster refresh")
+            log.write("Panels: [0]=Todos [1]=Chat [2]=Agents [3]=Cluster [4]=Camera [5]=Social [6]=Systems [7]=Config [8]=Help")
+            log.write("\nChat commands: /shell /status /todos /camera /memory /agents /clear /escalate")
+            log.write("Keyboard: 0-8 panels | R=refresh | Q=quit")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -921,35 +1333,40 @@ class HelpPanel(Widget):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class AliiApp(App):
-    """Alii Unified Terminal Hub."""
+    """Alii Unified Terminal Hub v3.0"""
 
     CSS_PATH = str(WORKDIR / "alii_tui.tcss")
-    TITLE = "Alii — Sovereign AI"
+    TITLE    = "Alii — Sovereign AI v3.0"
     BINDINGS = [
+        ("0", "show_todos",   "Todos"),
         ("1", "show_chat",    "Chat"),
         ("2", "show_agents",  "Agents"),
         ("3", "show_cluster", "Cluster"),
-        ("4", "show_social",  "Social"),
-        ("5", "show_systems", "Systems"),
-        ("6", "show_config",  "Config"),
-        ("7", "show_help",    "Help"),
+        ("4", "show_camera",  "Camera"),
+        ("5", "show_social",  "Social"),
+        ("6", "show_systems", "Systems"),
+        ("7", "show_config",  "Config"),
+        ("8", "show_help",    "Help"),
         ("q", "quit",         "Quit"),
         ("r", "refresh",      "Refresh"),
         ("?", "show_help",    "Help"),
     ]
 
     _cluster_state: Optional[ClusterState] = None
-    _current_panel: str = "panel-chat"
+    _current_panel: str = "panel-todos"
     _poller: Optional[ClusterPoller] = None
+    _cam_ok: bool = False
 
     def compose(self) -> ComposeResult:
         yield AliiHeader()
         with Horizontal(id="main-layout"):
             yield AliiMenu()
-            with ContentSwitcher(id="content-area", initial="panel-chat"):
+            with ContentSwitcher(id="content-area", initial="panel-todos"):
+                yield TodosPanel(id="panel-todos")
                 yield ChatPanel(id="panel-chat")
                 yield AgentsPanel(id="panel-agents")
                 yield ClusterPanel(id="panel-cluster")
+                yield CameraPanel(id="panel-camera")
                 yield SocialPanel(id="panel-social")
                 yield SystemsPanel(id="panel-systems")
                 yield ConfigPanel(id="panel-config")
@@ -957,31 +1374,24 @@ class AliiApp(App):
         yield Static("", id="status-bar")
 
     async def on_mount(self):
-        # Start cluster poller
         self._poller = ClusterPoller(interval=30.0)
         await self._poller.start()
-        # Schedule periodic header updates
         self.set_interval(10, self._update_header)
-        # Show startup message in status bar
-        self._set_status("Alii TUI started. Cluster scan in progress...")
+        self._set_status("Alii v3.0 — Cluster scan in progress... Press 0 for Todos, 1 for Chat, 4 for Camera")
 
     async def _update_header(self):
         if self._poller:
             state = await self._poller.get_state()
             self._cluster_state = state
-            header = self.query_one(AliiHeader)
-            header.update_state(state)
-            # Update cluster panel if visible
+            self.query_one(AliiHeader).update_state(state)
             if self._current_panel == "panel-cluster":
-                cluster_panel = self.query_one(ClusterPanel)
-                cluster_panel._render_cluster(state)
+                self.query_one(ClusterPanel)._render_cluster(state)
         self._set_status(
             f"Last refresh: {datetime.now().strftime('%H:%M:%S')}  |  "
-            f"Press 1-7 to navigate  |  R to refresh  |  Q to quit"
+            f"0=Todos 1=Chat 2=Agents 3=Cluster 4=Camera 5=Social 6=Sys 7=Config 8=Help  |  R=refresh Q=quit"
         )
 
     def force_cluster_refresh(self):
-        """Trigger an immediate cluster refresh."""
         self._set_status("Forcing cluster refresh...")
         asyncio.create_task(self._do_force_refresh())
 
@@ -1002,9 +1412,7 @@ class AliiApp(App):
 
     def show_panel(self, panel_id: str):
         self._current_panel = panel_id
-        switcher = self.query_one(ContentSwitcher)
-        switcher.current = panel_id
-        # Update menu highlight
+        self.query_one(ContentSwitcher).current = panel_id
         menu_lv = self.query_one(AliiMenu).query_one(ListView)
         for i, (_, pid) in enumerate(MENU_ITEMS):
             if pid == panel_id:
@@ -1012,22 +1420,19 @@ class AliiApp(App):
                 break
 
     # ── Key actions ────────────────────────────────────────────────────────────
-
+    def action_show_todos(self):   self.show_panel("panel-todos")
     def action_show_chat(self):    self.show_panel("panel-chat")
     def action_show_agents(self):  self.show_panel("panel-agents")
     def action_show_cluster(self): self.show_panel("panel-cluster")
+    def action_show_camera(self):  self.show_panel("panel-camera")
     def action_show_social(self):  self.show_panel("panel-social")
     def action_show_systems(self): self.show_panel("panel-systems")
     def action_show_config(self):  self.show_panel("panel-config")
     def action_show_help(self):    self.show_panel("panel-help")
-
-    def action_refresh(self):
-        self.force_cluster_refresh()
+    def action_refresh(self):      self.force_cluster_refresh()
 
     def on_alii_menu_selected(self, event: AliiMenu.Selected) -> None:
         self.show_panel(event.panel_id)
-
-    # ── Cleanup ────────────────────────────────────────────────────────────────
 
     async def on_unmount(self):
         if self._poller:
@@ -1041,7 +1446,6 @@ class AliiApp(App):
 def main():
     app = AliiApp()
     app.run()
-
 
 if __name__ == "__main__":
     main()
