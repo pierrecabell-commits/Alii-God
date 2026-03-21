@@ -50,12 +50,17 @@ log "ERROR: Still down after restart. Dumping logs and invoking Claude..."
 PROMPT="Alii UI is down on port $PORT. Steps: (1) run: journalctl --user -u alii-ui.service -n 100 --no-pager to see crash logs; (2) run: python3 -m py_compile /home/avalii/moltbot/alii_ui.py /home/avalii/moltbot/alii_model_router.py to check syntax; (3) fix any errors found in those files; (4) run: systemctl --user restart alii-ui.service; (5) confirm: ss -lntp | grep $PORT. Working directory: $WORKDIR"
 
 cd "$WORKDIR"
-alii-claude -p "$PROMPT" >> "$LOG" 2>&1 || \
-    log "ERROR: Claude invocation failed (exit $?)"
+# Try forced restart via systemctl --user, then kill+let-systemd-restart as fallback
+systemctl --user reset-failed "$SERVICE" 2>/dev/null || true
+systemctl --user restart "$SERVICE" 2>/dev/null && log "INFO: Forced restart issued via systemctl" || \
+    { pkill -f "chainlit run alii_ui.py" 2>/dev/null; log "INFO: Killed chainlit process — systemd will restart it"; }
 
 sleep 10
 if is_up; then
-    log "OK: Claude-assisted recovery succeeded — port $PORT is live."
+    log "OK: Recovery succeeded — port $PORT is live."
 else
-    log "CRIT: Port $PORT still down after Claude intervention. Manual action required."
+    log "CRIT: Port $PORT still down after recovery attempt. Manual action required."
+    # Send ntfy alert
+    curl -s -d "Alii UI (port $PORT) is down and could not recover automatically. Manual intervention needed on aliirecision." \
+        https://ntfy.sh/alii-precision >> "$LOG" 2>&1 || true
 fi

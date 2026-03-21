@@ -17,6 +17,7 @@ NODE_MAP = {
     "precision": {"output": "node1_inventory.json", "is_local": True},
     "xps": {"output": "node2_inventory.json", "is_local": False},
     "nuc": {"output": "node3_inventory.json", "is_local": False},
+    "jetson01": {"output": "node4_inventory.json", "is_local": False},
 }
 
 

@@ -37,6 +37,13 @@ model_list:
       model: ollama/qwen2.5:7b
       api_base: http://localhost:11434
 
+  # Smart-Plus: mistral-nemo:12b — deeper reasoning, better than 7B
+  # Pull: ollama pull mistral-nemo:12b
+  - model_name: smart-plus
+    litellm_params:
+      model: ollama/mistral-nemo:12b
+      api_base: http://localhost:11434
+
   # Code alias: code → qwen2.5-coder:7b
   - model_name: code
     litellm_params:
@@ -48,6 +55,18 @@ model_list:
     litellm_params:
       model: ollama/dolphin-llama3:8b
       api_base: http://localhost:11434
+
+  # Jetson Nano GPU inference — edge node (CUDA 10.2, Maxwell GPU, ARM64)
+  # Models stored at /data/ollama_models on Jetson
+  - model_name: jetson
+    litellm_params:
+      model: ollama/tinyllama
+      api_base: http://100.87.137.61:11434
+
+  - model_name: jetson-tiny
+    litellm_params:
+      model: ollama/tinyllama
+      api_base: http://100.87.137.61:11434
 
   # Cloud fallback — only active when ANTHROPIC_API_KEY is set
   - model_name: claude-sonnet
@@ -66,10 +85,13 @@ router_settings:
   num_retries: 3
   timeout: 90
   fallbacks:
-    - fast: [dolphin-llama3, default]
-    - smart: [dolphin-llama3, default]
-    - code: [dolphin-llama3, default]
-    - default: [fast, dolphin-phi]
+    - fast:        [jetson-tiny, dolphin-phi, default]
+    - smart:       [smart-plus, dolphin-llama3, default]
+    - smart-plus:  [smart, dolphin-llama3, default]
+    - code:        [dolphin-llama3, smart, default]
+    - default:     [fast, dolphin-phi]
+    - jetson:      [fast, dolphin-phi]
+    - jetson-tiny: [fast, dolphin-phi]
 
 litellm_settings:
   drop_params: true
@@ -79,6 +101,7 @@ litellm_settings:
 
 cache:
   type: local
+  ttl: 300
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

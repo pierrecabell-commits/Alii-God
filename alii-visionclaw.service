@@ -1,0 +1,16 @@
+[Unit]
+Description=Alii VisionClaw Bridge — Ray-Ban Meta glasses → OpenClaw gateway
+After=network.target openclaw-gateway.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/avalii/moltbot
+EnvironmentFile=/home/avalii/moltbot/.env
+ExecStart=/home/avalii/moltbot/venv/bin/python3 /home/avalii/moltbot/agents/visionclaw_bridge.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/avalii/moltbot/logs/visionclaw_bridge.log
+StandardError=append:/home/avalii/moltbot/logs/visionclaw_bridge.log
+
+[Install]
+WantedBy=default.target

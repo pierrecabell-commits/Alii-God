@@ -66,6 +66,7 @@ class ServiceSpec:
     startup_grace_s: float = 20.0
     restart_delay: float = 5.0
     max_restarts: int = 10
+    external: bool = False             # managed externally (systemd/Docker) — poll health only
     # runtime state
     pid: Optional[int] = None
     restarts: int = 0
@@ -89,17 +90,43 @@ DEFAULT_SERVICES: list[ServiceSpec] = [
     ),
     ServiceSpec(
         name="litellm-proxy",
-        cmd=["litellm", "--config", "litellm_config.yaml", "--port", "4000"],
+        cmd=[],  # managed by alii-router.service (systemd)
         health_url="http://127.0.0.1:4000/health",
         health_port=4000,
         startup_grace_s=30.0,
+        external=True,
     ),
     ServiceSpec(
         name="n8n",
-        cmd=["n8n", "start"],
+        cmd=[],  # managed by Docker container
         health_url="http://127.0.0.1:5678/healthz",
         health_port=5678,
         startup_grace_s=30.0,
+        external=True,
+    ),
+    ServiceSpec(
+        name="visionclaw-bridge",
+        cmd=[],  # managed by alii-visionclaw.service
+        health_url="http://127.0.0.1:7030/api/v1/vision/health",
+        health_port=7030,
+        startup_grace_s=15.0,
+        external=True,
+    ),
+    ServiceSpec(
+        name="saas-api",
+        cmd=[],  # managed by alii-saas.service
+        health_url="http://127.0.0.1:8080/health",
+        health_port=8080,
+        startup_grace_s=15.0,
+        external=True,
+    ),
+    ServiceSpec(
+        name="mixpost",
+        cmd=[],  # managed by Docker container
+        health_url="http://127.0.0.1:9101",
+        health_port=9101,
+        startup_grace_s=30.0,
+        external=True,
     ),
 ]
 
@@ -230,6 +257,11 @@ class ProcessGuard:
         await self.start()
 
     async def _run_loop(self):
+        # External services are managed by systemd/Docker — just poll health
+        if self.spec.external:
+            await self._poll_external()
+            return
+
         while not self._stop_event.is_set():
             if self.spec.restarts >= self.spec.max_restarts:
                 self.spec.status = "failed"
@@ -272,6 +304,16 @@ class ProcessGuard:
             self.spec.pid = None
             self.spec.restarts += 1
             await asyncio.sleep(self.spec.restart_delay)
+
+    async def _poll_external(self):
+        """Poll health endpoint for externally-managed services (systemd/Docker)."""
+        log.info("Service '%s' is externally managed — polling health only.", self.spec.name)
+        self.spec.started_at = time.time()
+        async with aiohttp.ClientSession() as session:
+            while not self._stop_event.is_set():
+                healthy = await check_health(self.spec, session)
+                self.spec.status = "running" if healthy else "external-down"
+                await asyncio.sleep(30)
 
 
 # ── Health checker ─────────────────────────────────────────────────────────────
@@ -835,6 +877,9 @@ class Alfred:
             await asyncio.get_running_loop().run_in_executor(None, self.improve_agents)
             await asyncio.sleep(3 * 3600)
 
+    # Track last research time per agent to throttle spam
+    _last_researched: dict = {}
+
     def score_and_rank_agents(self) -> list[dict]:
         """
         Score each agent by error rate in logs. Lower score = needs improvement first.
@@ -842,11 +887,16 @@ class Alfred:
         """
         agents_dir = WORKDIR / "agents"
         scores = []
+        # Agents that are "dependency-blocked" (healthy but waiting for external service)
+        dependency_blocked = {"imessage_bridge", "visionclaw_bridge", "macbook_presence",
+                               "iphone_presence", "mac_controller"}
         for agent_file in sorted(agents_dir.glob("*.py")):
             if agent_file.name.startswith("_"):
                 continue
             name     = agent_file.stem
             log_path = LOG_DIR / f"{name}.log"
+            # Also check hyphenated log name (e.g. imessage-bridge.log)
+            log_path_alt = LOG_DIR / f"{name.replace('_', '-')}.log"
             errors   = 0
             runs     = 0
             if log_path.exists():
@@ -856,24 +906,38 @@ class Alfred:
                     runs   = len(lines)
                 except Exception:
                     pass
-            # Also search overnight.log for this agent's name
+            elif log_path_alt.exists():
+                try:
+                    lines = log_path_alt.read_text(errors="replace").splitlines()
+                    errors = sum(1 for l in lines if "ERROR" in l or "CRITICAL" in l)
+                    runs   = len(lines)
+                except Exception:
+                    pass
+            # Also search overnight.log for this agent's name (cap at 10 extra errors)
             overnight = LOG_DIR / "overnight.log"
             if overnight.exists():
                 try:
+                    overnight_errors = 0
                     for line in overnight.read_text(errors="replace").splitlines():
                         if name in line.lower():
                             if "error" in line.lower() or "fail" in line.lower():
-                                errors += 1
+                                overnight_errors += 1
+                    errors += min(overnight_errors, 10)  # cap overnight contribution
                 except Exception:
                     pass
             error_rate = errors / max(runs, 1)
+            raw_score  = round(1.0 - min(error_rate * 10, 1.0), 2)
+            # Dependency-blocked agents: if zero errors, score as 0.6 (idle, not broken)
+            # This prevents them from permanently dominating the "worst agent" slot
+            if name in dependency_blocked and errors == 0:
+                raw_score = 0.6
             scores.append({
                 "agent":      name,
                 "file":       str(agent_file),
                 "errors":     errors,
                 "log_lines":  runs,
                 "error_rate": round(error_rate, 3),
-                "score":      round(1.0 - min(error_rate * 10, 1.0), 2),
+                "score":      raw_score,
             })
         scores.sort(key=lambda x: x["score"])   # worst first
         try:
@@ -967,11 +1031,11 @@ class Alfred:
     # ── Research loop ─────────────────────────────────────────────────────────
 
     async def _research_loop(self):
-        """Run research_optimizations() every 3h, offset 1h from improve loop."""
+        """Run research_optimizations() every 6h, offset 1h from improve loop."""
         await asyncio.sleep(2700)  # 45min initial offset
         while True:
             await asyncio.get_running_loop().run_in_executor(None, self.research_optimizations)
-            await asyncio.sleep(3 * 3600)
+            await asyncio.sleep(6 * 3600)  # 6h — was 3h, reduced to save tokens
 
     async def _web_research_loop(self):
         """Fetch ArXiv AI-agent papers weekly to keep Alfred current."""
@@ -994,6 +1058,18 @@ class Alfred:
         name      = worst["agent"]
         file_path = worst["file"]
         score     = worst["score"]
+
+        # Throttle: skip if this agent was researched within the last 4 hours
+        import time as _time
+        last_t = self._last_researched.get(name, 0)
+        if _time.time() - last_t < 4 * 3600:
+            log.info("research_optimizations: %s researched recently — skipping.", name)
+            return
+        # Skip if agent is already scoring well (>= 0.75) — not worth the tokens
+        if score >= 0.75:
+            log.info("research_optimizations: %s score=%.2f is healthy — skipping.", name, score)
+            return
+        self._last_researched[name] = _time.time()
 
         # Gather context: recent log tail for that agent
         agent_log = LOG_DIR / f"{name}.log"
@@ -1056,16 +1132,18 @@ class Alfred:
 
             log.info("research_optimizations: %s → syntax=%s", name, syntax_ok)
 
-            try:
-                subprocess.run(
-                    ["curl", "-s", "-X", "POST",
-                     "-H", f"Title: Alfred researched {name}",
-                     "-d", f"Research optimization for {name} (score={score}): {summary[:200]}",
-                     "https://ntfy.sh/alii-precision"],
-                    capture_output=True, timeout=8
-                )
-            except Exception:
-                pass
+            # Only send ntfy if something meaningful changed (summary > "researched")
+            if summary and summary != "researched" and len(summary) > 20:
+                try:
+                    subprocess.run(
+                        ["curl", "-s", "-X", "POST",
+                         "-H", f"Title: Alfred researched {name}",
+                         "-d", f"Research optimization for {name} (score={score}): {summary[:200]}",
+                         "https://ntfy.sh/alii-precision"],
+                        capture_output=True, timeout=8
+                    )
+                except Exception:
+                    pass
 
         except subprocess.TimeoutExpired:
             log.warning("research_optimizations timed out for %s", name)

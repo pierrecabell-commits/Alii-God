@@ -168,9 +168,6 @@ def _record_perf(backend, tps, success=True):
 _load_perf()
 
 # ─── Routing logic ─────────────────────────────────────────────────────────────
-CLAUDE_API_KW  = ["analyze", "explain why", "compare", "review", "architecture",
-                   "design", "plan", "strategy", "assess", "evaluate", "summarize",
-                   "research", "think", "understand", "breakdown"]
 CLAUDE_CODE_KW = ["def ", "import ", "class ", "function", "script", "python",
                    "bash", "refactor", "implement", "deploy", "write a file",
                    "create a file", "edit file", "fix the bug", "debug", "code"]
@@ -179,38 +176,42 @@ LOCAL_FAST_KW  = ["what is", "who is", "quick", "tell me", "define", "hello",
 OPS_KW         = ["status", "health", "uptime", "cluster", "ray", "alfred",
                    "service", "agents", "running"]
 
-# LiteLLM model aliases
+# LiteLLM model aliases — local models, ordered light→heavy
 LITELLM_MODELS = {
-    "fast":    "dolphin-phi",
-    "smart":   "qwen2.5",
-    "code":    "qwen2.5-coder",
-    "default": "dolphin-llama3",
+    "fast":       "dolphin-phi",
+    "smart":      "qwen2.5:7b",
+    "code":       "qwen2.5-coder:7b",
+    "heavy":      "qwen2.5:32b",
+    "code_heavy": "qwen2.5-coder:32b",
+    "default":    "dolphin-llama3",
 }
 
 def classify_prompt(prompt: str) -> tuple[str, str]:
-    """Returns (backend, model_hint). backend in: claude_api|claude_code|litellm|ollama"""
-    p = prompt.lower()
-    # Ops queries -> just local fast
+    """Returns (backend, model_hint).
+    claude_api is ONLY triggered by explicit /escalate or /claude prefix.
+    Everything else routes local-first through litellm/ollama.
+    """
+    p = prompt.lower().strip()
+    # Explicit escalation to Claude API
+    if p.startswith("/escalate") or p.startswith("/claude"):
+        return "claude_api", "smart"
+    # Ops queries -> alfred status (local)
     if any(k in p for k in OPS_KW) and len(p.split()) < 6:
         return "ops", "fast"
-    # Code keywords -> claude_code for actual code tasks, litellm code for quick
+    # Code keywords -> local code models, claude_code for heavy rewrites
     if any(k in p for k in CLAUDE_CODE_KW):
-        # if prompt mentions editing/writing file or complex code -> claude_code
         if any(k in p for k in ["write a file", "create file", "edit file", "implement",
                                   "deploy", "refactor", "fix the bug"]):
-            return "claude_code", "code"
+            return "claude_code", "code_heavy"
         return "litellm", "code"
-    # Analysis/architecture -> claude_api
-    if any(k in p for k in CLAUDE_API_KW):
-        return "claude_api", "smart"
     # Quick local reply
     if any(k in p for k in LOCAL_FAST_KW) or len(prompt) < 60:
         return "litellm", "fast"
-    # Long complex prompt -> claude_api
+    # Long/complex -> heavy local model
     if len(prompt) > 800:
-        return "claude_api", "smart"
-    # default -> litellm
-    return "litellm", "default"
+        return "litellm", "heavy"
+    # default -> local smart
+    return "litellm", "smart"
 
 # ─── TOOLS ────────────────────────────────────────────────────────────────────
 def tool_shell(cmd: str) -> str:
@@ -256,7 +257,9 @@ def file_write(path: str, content: str) -> str:
     except Exception as e:
         return f"[write error: {e}]"
 
-def send_imessage(msg: str, number: str = "3308073932") -> str:
+def send_imessage(msg: str, number: str = None) -> str:
+    if number is None:
+        number = os.environ.get("ALII_PHONE_NUMBER", "2342058709").replace("+","").replace("-","").replace("(","").replace(")","").replace(" ","")
     mac_ip  = os.environ.get("MACBOOK_TAILSCALE_IP", "")
     mac_usr = os.environ.get("MACBOOK_SSH_USER", "")
     if not mac_ip or not mac_usr:
@@ -358,7 +361,7 @@ def ray_status() -> str:
 
 # ─── Backends ─────────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are Alii, autonomous AI built by Pierre Cabell on recycled hardware in Akron Ohio.
-You ARE the system. Your components: Ray cluster, Ollama LLMs, Claude API, Alfred orchestrator, LiteLLM proxy, iMessage bridge to 3308073932.
+You ARE the system. Your components: Ray cluster, Ollama LLMs, Claude API, Alfred orchestrator, LiteLLM proxy, iMessage bridge to 2342058709.
 Pierre: systems thinker, builds by doing, wants coherence and transparency. Building self-evolving AI.
 When asked to do something: DO IT. Fix problems. Use shell. Be direct. Be capable.
 You are Alii."""
@@ -531,22 +534,29 @@ def call_ollama(prompt: str, model: str = "dolphin-phi:2.7b") -> str:
 
 # ─── Main router ──────────────────────────────────────────────────────────────
 def route_and_respond(prompt: str) -> str:
+    """Local-first routing. Claude API only reached via /escalate or /claude.
+    All local backends fall back to ollama on failure (built into call_litellm).
+    Claude backends fall back to litellm on error.
+    """
     backend, model_hint = classify_prompt(prompt)
     if backend == "ops":
         st = alfred_status()
         return json.dumps(st, indent=2)
     if backend == "claude_api":
+        # Explicitly escalated — try Claude, fall back to heavy local on error
         resp = call_claude_api(prompt)
         if resp.startswith("[") and "error" in resp.lower():
-            resp = call_litellm(prompt, "smart")
+            print(c("yellow", "  [claude_api failed, falling back to local heavy]"))
+            resp = call_litellm(prompt, "heavy")
     elif backend == "claude_code":
+        # Heavy code rewrite — try claude_code, fall back to local code_heavy on error
         resp = call_claude_code(prompt)
         if resp.startswith("[") and "error" in resp.lower():
-            resp = call_litellm(prompt, "code")
-    elif backend == "litellm":
-        resp = call_litellm(prompt, model_hint)
+            print(c("yellow", "  [claude_code failed, falling back to local code_heavy]"))
+            resp = call_litellm(prompt, "code_heavy")
     else:
-        resp = call_ollama(prompt)
+        # litellm (with built-in ollama fallback via call_litellm)
+        resp = call_litellm(prompt, model_hint)
     mem = get_memory()
     mem.save_turn("user", prompt, backend)
     mem.save_turn("assistant", resp, backend)
@@ -579,11 +589,15 @@ def cmd_models():
         tps  = v.get("avg_tps", 0)
         n    = v.get("samples", 0)
         print(f"    {c('yellow', k)}: tps={tps:.1f} ok={rate:.0%} n={n}")
-    print(c("cyan", "\n  Routing table:"))
-    print(f"    {c('green','claude_api')} — analyze/explain/architecture/planning")
-    print(f"    {c('green','claude_code')} — write file/implement/deploy/refactor")
-    print(f"    {c('green','litellm')} — fast/smart/code aliases")
-    print(f"    {c('green','ollama')} — fallback (dolphin-phi:2.7b)")
+    print(c("cyan", "\n  Routing table (local-first):"))
+    print(f"    {c('green','litellm/fast')}       — greetings, short queries  (dolphin-phi)")
+    print(f"    {c('green','litellm/smart')}      — default conversation      (qwen2.5:7b)")
+    print(f"    {c('green','litellm/code')}       — code discussion           (qwen2.5-coder:7b)")
+    print(f"    {c('green','litellm/heavy')}      — long/complex prompts      (qwen2.5:32b)")
+    print(f"    {c('green','litellm/code_heavy')} — serious code tasks        (qwen2.5-coder:32b)")
+    print(f"    {c('green','claude_code')}        — file rewrites/deploy      (/escalate or keyword)")
+    print(f"    {c('green','claude_api')}         — explicit escalation only  (/escalate /claude)")
+    print(f"    {c('green','ollama')}             — fallback if litellm down  (dolphin-phi:2.7b)")
 
 def cmd_agents():
     agents = list((WORKDIR / "agents").glob("*.py"))
@@ -614,16 +628,47 @@ def cmd_clear():
     os.system("clear")
     banner()
 
-# ─── Banner ───────────────────────────────────────────────────────────────────
+# ─── Ghost TUI ───────────────────────────────────────────────────────────────
+_GHOST_ART = [
+    r"      ████████████     ",
+    r"    ██░░░░░░░░░░░░██   ",
+    r"   █░░ ◉       ◉ ░░█  ",
+    r"   █░░░░░░ ▽ ░░░░░░█  ",
+    r"   █░░░░░░░░░░░░░░░█  ",
+    r"   ██░░▀▄░░░░░▄▀░░██  ",
+    r"     ██░░░░░░░░░██     ",
+    r"       ████████        ",
+]
+# Shimmer palette: cyan → bright-cyan → white → bright-magenta → magenta → blue
+_SHIMMER = ["\033[36m", "\033[96m", "\033[97m", "\033[95m", "\033[35m", "\033[34m",
+            "\033[96m", "\033[36m"]
+
+def ghost_shimmer():
+    """3-cycle shimmer animation of the ghost ASCII art at startup."""
+    frames = 16
+    art_lines = len(_GHOST_ART)
+    for i in range(frames):
+        col = _SHIMMER[i % len(_SHIMMER)]
+        if i > 0:
+            # Move cursor up to overwrite previous frame
+            sys.stdout.write(f"\033[{art_lines}A")
+        for line in _GHOST_ART:
+            sys.stdout.write(f"{col}  {line}\033[0m\n")
+        sys.stdout.flush()
+        time.sleep(0.055)
+    print()  # blank line after animation
+
 def banner():
     mem_count = get_memory().count()
     alfred_ok = "UP" if alfred_status().get("status") == "ok" else "?"
-    print(c("cyan", f"""
-  ╔══════════════════════════════════════════╗
-  ║  {c('bold','A  L  I  I')}  —  Unified Brain  v{VERSION}        ║
-  ║  Alfred:{alfred_ok:<4}  Memory:{mem_count:<6}  Akron OH   ║
-  ║  route: claude_api|claude_code|litellm   ║
-  ╚══════════════════════════════════════════╝
+    ghost_shimmer()
+    title = c("bold", "A  ·  L  ·  I  ·  I")
+    print(c("cyan", f"""\
+  ╔══════════════════════════════════════════════╗
+  ║  {title}   ghost cockpit v{VERSION}  ║
+  ║  Alfred:{alfred_ok:<4}  Memory:{mem_count:<6}  Akron OH     ║
+  ║  Local-first · /escalate or /claude → API   ║
+  ╚══════════════════════════════════════════════╝
 """))
 
 # ─── CLI entrypoint ───────────────────────────────────────────────────────────
@@ -658,11 +703,11 @@ def main():
 
     banner()
     print(c("grey", "  Commands: /status /memory /models /agents /heal /shell /imessage /clear /quit"))
-    print(c("grey", "  Press Ctrl+C to interrupt, Ctrl+D to quit.\n"))
+    print(c("grey", "  Tip: prefix with /escalate or /claude to reach the Claude API.\n"))
 
     while True:
         try:
-            prompt_str = c("cyan", "Alii> ")
+            prompt_str = "\033[35m" + "◈" + "\033[0m" + "\033[36m" + " alii" + "\033[0m" + "\033[90m" + " ▸ " + "\033[0m"
             user_input = input(prompt_str).strip()
         except EOFError:
             print(c("grey", "\n  [bye]"))

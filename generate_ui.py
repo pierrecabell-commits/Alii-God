@@ -72,7 +72,7 @@ async def main(message: cl.Message):
                     except json.JSONDecodeError:
                         continue
 
-                    if "response" in 
+                    if "response" in data:
                         token_chunks += 1
                         await msg.stream_token(data["response"])
 
