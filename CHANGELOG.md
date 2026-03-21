@@ -1,14 +1,18 @@
 # Alii Changelog
 
-## [2026-03-04] — 2026-03-04
+## [2026-03-21] — 2026-03-21
 
 ### Features
+- `f6897b5` feat: agent expansion, cluster merge, cleanup, iMessage bridge, alii_core, launcher, gitignore hardened _Alii (2026-03-04)_
 - `99307f5` feat: AccountsAgent (Fernet vault) + CryptoAgent (local ETH wallet) _Alii (2026-02-27)_
 - `7c79585` feat: zero-cost-first revenue strategy in MoneyAgent + BusinessAgent _Alii (2026-02-27)_
 - `1ccdc91` feat: 3hr improvement cycles, research loop, agent self-optimization _Alii (2026-02-27)_
 - `63717ff` feat: two-way command bridges (ntfy + iMessage) and network agents _Alii (2026-02-27)_
 - `a2d3b9d` feat: complete agent ecosystem - LawAgent BusinessAgent SocialAgent with full automation and privacy protection _Alii (2026-02-27)_
 - `53dafec` feat: add Alfred orchestrator, agents framework, and repo scaffolding _Alii (2026-02-27)_
+
+### Documentation
+- `7e27a68` docs: add Alii-God README with agent roster, stack, cluster, memory architecture _Alii (2026-03-04)_
 
 ### Chores
 - `edaa8b7` chore: snapshot personal Alii _Alii (2026-03-03)_

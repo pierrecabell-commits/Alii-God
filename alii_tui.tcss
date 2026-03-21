@@ -1,0 +1,316 @@
+/* alii_tui.tcss — Kali/tech dark theme for Alii TUI */
+
+/* ── Base ── */
+Screen {
+    background: #0a0a0f;
+    color: #c8d3e0;
+    layers: base overlay;
+}
+
+/* ── Header ── */
+AliiHeader {
+    height: 4;
+    background: #0d1117;
+    border-bottom: solid #1e3a5f;
+    padding: 0 1;
+    color: #c8d3e0;
+    layer: base;
+}
+
+#header-line1 {
+    color: #00e5cc;
+    text-style: bold;
+}
+
+#header-line2 {
+    color: #8899aa;
+}
+
+#header-line3 {
+    color: #667788;
+}
+
+/* ── Layout ── */
+#main-layout {
+    height: 1fr;
+}
+
+/* ── Sidebar Menu ── */
+AliiMenu {
+    width: 24;
+    background: #0d1117;
+    border-right: solid #1e3a5f;
+    padding: 1 0;
+}
+
+#menu-title {
+    background: #0d1117;
+    color: #00e5cc;
+    text-style: bold;
+    padding: 0 2;
+    margin-bottom: 1;
+}
+
+AliiMenu ListView {
+    background: #0d1117;
+    border: none;
+    padding: 0;
+}
+
+AliiMenu ListItem {
+    padding: 0 2;
+    color: #6677aa;
+    background: #0d1117;
+}
+
+AliiMenu ListItem:hover {
+    background: #131a26;
+    color: #99bbdd;
+}
+
+AliiMenu ListItem.--highlight {
+    background: #0f2040;
+    color: #00e5cc;
+    text-style: bold;
+    border-left: solid #00e5cc;
+}
+
+/* ── Content area ── */
+#content-area {
+    background: #0a0a0f;
+    padding: 0;
+}
+
+ContentSwitcher {
+    background: #0a0a0f;
+    height: 1fr;
+}
+
+/* ── Chat Panel ── */
+#panel-chat {
+    background: #0a0a0f;
+}
+
+#chat-log {
+    background: #0a0a0f;
+    border: none;
+    padding: 1 2;
+    height: 1fr;
+    scrollbar-color: #1e3a5f;
+    scrollbar-background: #0d1117;
+}
+
+#chat-input-bar {
+    background: #0d1117;
+    border-top: solid #1e3a5f;
+    height: 3;
+    padding: 0 1;
+    align: left middle;
+}
+
+#chat-prompt {
+    color: #00e5cc;
+    width: auto;
+    padding: 0 1;
+    text-style: bold;
+}
+
+#chat-input {
+    background: #131a26;
+    border: solid #1e3a5f;
+    color: #c8d3e0;
+    height: 1;
+    width: 1fr;
+    padding: 0 1;
+}
+
+#chat-input:focus {
+    border: solid #00e5cc;
+}
+
+/* ── Agents Panel ── */
+#panel-agents {
+    background: #0a0a0f;
+    padding: 1 2;
+}
+
+#agents-header {
+    color: #00e5cc;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* ── Cluster Panel ── */
+#panel-cluster {
+    background: #0a0a0f;
+    padding: 1 2;
+}
+
+#cluster-header {
+    color: #00e5cc;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* ── Social Panel ── */
+#panel-social {
+    background: #0a0a0f;
+    padding: 1 2;
+}
+
+#social-header {
+    color: #00e5cc;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#mixpost-url {
+    color: #5599ff;
+    margin: 1 0;
+}
+
+/* ── Systems Panel ── */
+#panel-systems {
+    background: #0a0a0f;
+    padding: 0;
+}
+
+TabbedContent {
+    background: #0a0a0f;
+    height: 1fr;
+}
+
+TabbedContent ContentSwitcher {
+    background: #0a0a0f;
+}
+
+Tab {
+    background: #0d1117;
+    color: #6677aa;
+    padding: 0 2;
+}
+
+Tab:hover {
+    color: #99bbdd;
+    background: #131a26;
+}
+
+Tab.-active {
+    color: #00e5cc;
+    background: #0f2040;
+    text-style: bold;
+}
+
+TabPane {
+    background: #0a0a0f;
+    padding: 1 2;
+}
+
+/* ── Config Panel ── */
+#panel-config {
+    background: #0a0a0f;
+    padding: 1 2;
+}
+
+#config-header {
+    color: #00e5cc;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+/* ── Help Panel ── */
+#panel-help {
+    background: #0a0a0f;
+    padding: 1 2;
+}
+
+/* ── DataTable ── */
+DataTable {
+    background: #0a0a0f;
+    border: solid #1e3a5f;
+}
+
+DataTable > .datatable--header {
+    background: #0d1117;
+    color: #00e5cc;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: #0f2040;
+    color: #c8d3e0;
+}
+
+DataTable > .datatable--even-row {
+    background: #0a0a0f;
+}
+
+DataTable > .datatable--odd-row {
+    background: #0d1117;
+}
+
+/* ── RichLog ── */
+RichLog {
+    background: #0a0a0f;
+    border: none;
+    scrollbar-color: #1e3a5f;
+    scrollbar-background: #0d1117;
+}
+
+/* ── Buttons ── */
+Button {
+    background: #0f2040;
+    color: #00e5cc;
+    border: solid #1e3a5f;
+    height: 1;
+    min-width: 12;
+    padding: 0 2;
+}
+
+Button:hover {
+    background: #1a3a6f;
+    border: solid #00e5cc;
+}
+
+Button:focus {
+    border: solid #00e5cc;
+}
+
+Button.-primary {
+    background: #003355;
+    color: #00e5cc;
+    border: solid #00e5cc;
+    text-style: bold;
+}
+
+/* ── Status bar ── */
+#status-bar {
+    height: 1;
+    background: #0d1117;
+    border-top: solid #1e3a5f;
+    color: #445566;
+    padding: 0 2;
+}
+
+/* ── Section labels ── */
+.section-label {
+    color: #00e5cc;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.dim-text {
+    color: #445566;
+}
+
+.online {
+    color: #00cc88;
+}
+
+.offline {
+    color: #cc3344;
+}
+
+.warning {
+    color: #ffaa00;
+}

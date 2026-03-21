@@ -1,4 +1,4 @@
-code = """import chainlit as cl
+import chainlit as cl
 import json
 import aiohttp
 import time
@@ -6,12 +6,12 @@ from alii_model_router import AliiModelRouter
 
 router = AliiModelRouter()
 
-WELCOME = \"\"\"**Alii OS // System Online**
+WELCOME = """**Alii OS // System Online**
 _Distributed Intelligence Mesh Active_
 
 My neural pathways are optimized for the cluster. I am ready to begin.
 
-How can we change the world today?\"\"\"
+How can we change the world today?"""
 
 def classify_task(prompt: str) -> str:
     p = (prompt or "").lower()
@@ -86,6 +86,3 @@ async def main(message: cl.Message):
     tps = token_chunks / elapsed
     msg.content += f"\n\n---\n[Node: {model} // {token_chunks} chunks // {tps:.1f} c/s]"
     await msg.update()
-"""
-with open("/home/avalii/moltbot/alii_ui.py", "w", encoding="utf-8") as f:
-    f.write(code)

@@ -1,0 +1,16 @@
+[Unit]
+Description=Alii ntfy Status Broadcaster — comprehensive cluster status feed
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/avalii/moltbot
+EnvironmentFile=/home/avalii/moltbot/.env
+ExecStart=/home/avalii/moltbot/venv/bin/python3 /home/avalii/moltbot/agents/ntfy_status.py
+Restart=always
+RestartSec=15
+StandardOutput=append:/home/avalii/moltbot/logs/ntfy_status.log
+StandardError=append:/home/avalii/moltbot/logs/ntfy_status.log
+
+[Install]
+WantedBy=default.target

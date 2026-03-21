@@ -1,0 +1,17 @@
+[Unit]
+Description=Alii Social Agent — Brand presence and content flywheel
+After=network.target alii-vault.service
+
+[Service]
+Type=simple
+User=avalii
+WorkingDirectory=/home/avalii/moltbot
+EnvironmentFile=/home/avalii/moltbot/.env
+ExecStart=/home/avalii/moltbot/venv/bin/python3 /home/avalii/moltbot/run_social_agent.py
+Restart=on-failure
+RestartSec=60
+StandardOutput=append:/home/avalii/moltbot/logs/social_agent.log
+StandardError=append:/home/avalii/moltbot/logs/social_agent.log
+
+[Install]
+WantedBy=default.target

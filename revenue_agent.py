@@ -34,7 +34,7 @@ except ImportError:
 REPORT_FILE = "/home/avalii/moltbot/logs/money_report.json"
 STATE_FILE = "/home/avalii/moltbot/data/revenue_state.json"
 LOG_FILE = "/home/avalii/moltbot/logs/revenue_agent.log"
-NTFY_URL = "http://localhost:8080/alii-alerts"
+NTFY_URL = os.getenv("NTFY_URL", "https://ntfy.sh/alii-precision")
 
 PROJECT_NAME = "Alii AI"
 PROJECT_DESCRIPTION = (
@@ -42,8 +42,8 @@ PROJECT_DESCRIPTION = (
     "Self-hosted, privacy-first, multi-node cluster with local LLMs, vector memory, "
     "and full agent ecosystem. No cloud required."
 )
-GITHUB_REPO_NAME = "alii-ai"
-GITHUB_USERNAME = "AVAlii1993"
+GITHUB_REPO_NAME = os.getenv("GITHUB_REPO_NAME", "alii-ai")
+GITHUB_USERNAME  = os.getenv("GITHUB_USERNAME", "AVAlii1993")
 
 REDDIT_SELFHOSTED_POST = {
     "title": "Alii AI - Open-source autonomous agent system on recycled hardware (self-hosted, local LLMs)",
@@ -393,7 +393,8 @@ def print_report():
     print(f"  r/selfhosted posted: {state.get('reddit_posted_selfhosted', False)}")
     print(f"  r/LocalLLaMA posted: {state.get('reddit_posted_localllama', False)}")
     print(f"  (Set REDDIT_* credentials in .env to activate)")
-    print(f"\nContact form: http://localhost:8888 (run with --serve)")
+    contact_port = int(os.getenv("CONTACT_PORT", 8889))
+    print(f"\nContact form: http://localhost:{contact_port} (run with --serve)")
     print(f"\nCredential status:")
     for key in ["GITHUB_TOKEN", "REDDIT_CLIENT_ID", "REDDIT_USERNAME"]:
         val = os.environ.get(key, "")
@@ -434,15 +435,18 @@ def main():
         time.sleep(5)  # Reddit rate limit
         post_to_reddit(REDDIT_LOCALLLAMA_POST, state, "reddit_posted_localllama")
 
-    if args.monitor:
-        monitor_github_loop()
-
+    # Start contact server in background thread FIRST so it isn't blocked by monitor loop
+    contact_port = int(os.getenv("CONTACT_PORT", 8889))
     if args.serve or args.all:
-        t = threading.Thread(target=start_contact_server, args=(8888,), daemon=True)
+        t = threading.Thread(target=start_contact_server, args=(contact_port,), daemon=True)
         t.start()
-        log("Contact form server running on :8888")
-        if args.serve and not args.all:
-            t.join()
+        log(f"Contact form server running on :{contact_port}")
+
+    if args.monitor or args.all:
+        monitor_github_loop()  # blocks — contact server thread stays alive behind it
+    elif args.serve:
+        # --serve only: keep main thread alive
+        t.join()
 
 
 if __name__ == "__main__":
